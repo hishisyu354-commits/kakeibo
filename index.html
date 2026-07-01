@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#4f46e5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="食費家計簿">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍚</text></svg>">
+<link rel="apple-touch-icon" href="data:image/png;base64,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">
+<title>食費家計簿</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#ffffff; --text:#1e2330; --muted:#6b7280;
+    --pos:#15a34a; --neg:#e5484d; --accent:#4f46e5; --accent-weak:#eef0fe;
+    --border:#e7e9ee; --track:#eceef2; --shadow:0 1px 3px rgba(20,25,40,.06),0 1px 2px rgba(20,25,40,.04);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0e1014; --card:#181b21; --text:#e8eaf0; --muted:#98a0ac;
+      --pos:#3ddc84; --neg:#ff6b6f; --accent:#7c7bff; --accent-weak:#23233a;
+      --border:#272c35; --track:#232832; --shadow:none;
+    }
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+    background:var(--bg); color:var(--text); line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    padding-bottom:calc(76px + env(safe-area-inset-bottom));
+  }
+  header{
+    position:sticky; top:0; z-index:10;
+    background:var(--bg);
+    padding:calc(env(safe-area-inset-top) + 12px) 16px 8px;
+    display:flex; align-items:baseline; justify-content:space-between;
+    border-bottom:1px solid var(--border);
+  }
+  .brand{font-weight:700; font-size:18px}
+  .today-date{font-size:13px; color:var(--muted)}
+  main{max-width:520px; margin:0 auto; padding:14px 14px 24px}
+  section[hidden]{display:none}
+
+  .card{background:var(--card); border:1px solid var(--border); border-radius:16px; padding:16px; box-shadow:var(--shadow); margin-bottom:12px}
+  .label{font-size:13px; color:var(--muted); font-weight:600; letter-spacing:.02em}
+  .big{font-size:44px; font-weight:800; line-height:1.15; margin:2px 0 4px; letter-spacing:-.02em}
+  .mid{font-size:30px; font-weight:800; line-height:1.2; margin:2px 0 2px}
+  .sub{font-size:13px; color:var(--muted)}
+  .hero.pos .big,.cum.pos .mid,.pos{color:var(--pos)}
+  .hero.neg .big,.cum.neg .mid,.neg{color:var(--neg)}
+  .zero{color:var(--muted)}
+  .bar{height:8px; background:var(--track); border-radius:99px; overflow:hidden; margin-top:12px}
+  .bar-fill{height:100%; background:var(--accent); border-radius:99px; transition:width .3s ease}
+  .bar-fill.over{background:var(--neg)}
+
+  form.add-form{background:var(--card); border:1px solid var(--border); border-radius:16px; padding:12px; box-shadow:var(--shadow); margin-bottom:12px}
+  .add-form .row{display:flex; gap:8px}
+  .add-form .row2{display:flex; align-items:center; justify-content:space-between; margin-top:8px; gap:8px; flex-wrap:wrap}
+  input{
+    font:inherit; color:var(--text); background:var(--bg);
+    border:1px solid var(--border); border-radius:11px; padding:12px 12px; width:100%;
+  }
+  input:focus{outline:none; border-color:var(--accent); background:var(--card)}
+  #amt{flex:0 0 34%; font-weight:700}
+  #memo{flex:1 1 auto}
+  .btn-add{
+    flex:0 0 auto; border:none; background:var(--accent); color:#fff; font-weight:700;
+    border-radius:11px; padding:0 18px; font-size:15px; cursor:pointer;
+  }
+  .btn-add:active{transform:scale(.97)}
+  .row2 label{font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px}
+  .row2 label input{width:auto; padding:7px 9px}
+  .msg{font-size:13px; color:var(--neg); min-height:1em}
+
+  .section-title{font-size:14px; font-weight:700; color:var(--muted); margin:6px 2px 8px}
+  .empty{color:var(--muted); text-align:center; padding:22px; background:var(--card); border:1px dashed var(--border); border-radius:14px}
+  .empty.small{padding:12px; border:none; background:transparent; text-align:left}
+
+  .entry{display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:11px 12px; margin-bottom:8px}
+  .entry-memo{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .entry-amt{font-weight:700; white-space:nowrap}
+  .del{border:none; background:var(--track); color:var(--muted); width:40px; height:40px; min-width:40px; border-radius:50%; font-size:20px; line-height:1; cursor:pointer; flex:0 0 auto}
+  .del:active{background:var(--neg); color:#fff}
+
+  details.day{background:var(--card); border:1px solid var(--border); border-radius:14px; margin-bottom:10px; overflow:hidden}
+  details.day>summary{list-style:none; cursor:pointer; padding:13px 14px}
+  details.day>summary::-webkit-details-marker{display:none}
+  .sum-main{display:flex; justify-content:space-between; align-items:baseline; gap:10px}
+  .d-date{font-weight:700}
+  .d-net{font-weight:800; font-size:17px}
+  .sum-sub{display:flex; justify-content:space-between; gap:10px; font-size:13px; color:var(--muted); margin-top:3px}
+  details.day>div.entries{padding:2px 14px 12px; border-top:1px solid var(--border)}
+
+  .period{background:var(--card); border:1px solid var(--border); border-radius:14px; padding:13px 14px; margin-bottom:10px}
+  .p-head{display:flex; justify-content:space-between; align-items:baseline; gap:10px}
+  .p-label{font-weight:700}
+  .p-net{font-weight:800; font-size:18px}
+  .p-sub{display:flex; justify-content:space-between; gap:10px; font-size:13px; color:var(--muted); margin-top:3px}
+
+  .field{display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:600; margin-bottom:14px}
+  .btn{display:block; width:100%; border:none; border-radius:12px; padding:13px; font:inherit; font-weight:700; cursor:pointer; background:var(--accent); color:#fff; margin-top:6px}
+  .btn.secondary{background:var(--accent-weak); color:var(--accent)}
+  .btn.danger{background:transparent; color:var(--neg); border:1px solid var(--neg)}
+  .btn:active{transform:scale(.99)}
+  .note{font-size:13px; color:var(--muted); margin:0 0 12px}
+  .foot{text-align:center; color:var(--muted); font-size:12px; padding:12px}
+
+  nav.tabbar{
+    position:fixed; left:0; right:0; bottom:0; z-index:20;
+    display:flex; background:var(--card); border-top:1px solid var(--border);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  nav.tabbar button{
+    position:relative;
+    flex:1; border:none; background:none; color:var(--muted); cursor:pointer;
+    padding:9px 2px 9px; font:inherit; font-size:11px; font-weight:600;
+    display:flex; flex-direction:column; align-items:center; gap:2px;
+  }
+  nav.tabbar button .ico{font-size:20px; line-height:1}
+  nav.tabbar button.active{color:var(--accent); font-weight:800}
+  nav.tabbar button.active::before{content:""; position:absolute; top:0; left:26%; right:26%; height:3px; background:var(--accent); border-radius:0 0 3px 3px}
+
+  #toast{
+    position:fixed; left:50%; bottom:calc(90px + env(safe-area-inset-bottom)); transform:translateX(-50%);
+    background:#1e2330; color:#fff; padding:10px 16px; border-radius:12px; font-size:14px;
+    opacity:0; pointer-events:none; transition:opacity .25s; z-index:50; max-width:90%;
+  }
+  #toast.show{opacity:.97}
+  #toast button{margin-left:10px; border:none; background:none; color:#8ab4ff; font:inherit; font-weight:700; cursor:pointer; padding:2px 4px}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">🍚 食費家計簿</div>
+  <div class="today-date" id="headerDate"></div>
+</header>
+
+<main>
+  <section id="tab-today">
+    <div id="todayStats"></div>
+    <form id="addForm" class="add-form" autocomplete="off">
+      <div class="row">
+        <input id="amt" type="number" inputmode="numeric" min="1" step="1" placeholder="金額" aria-label="金額（円）" required>
+        <input id="memo" type="text" placeholder="メモ（任意）例: 昼食" aria-label="メモ">
+        <button type="submit" class="btn-add">追加</button>
+      </div>
+      <div class="row2">
+        <label>日付 <input id="date" type="date"></label>
+        <span id="formMsg" class="msg"></span>
+      </div>
+    </form>
+    <div id="todayEntries"></div>
+  </section>
+
+  <section id="tab-daily" hidden></section>
+  <section id="tab-weekly" hidden></section>
+  <section id="tab-monthly" hidden></section>
+  <section id="tab-settings" hidden></section>
+</main>
+
+<nav class="tabbar" role="tablist" aria-label="表示切り替え">
+  <button data-tab="today" role="tab" aria-selected="true"><span class="ico">📅</span>今日</button>
+  <button data-tab="daily" role="tab" aria-selected="false"><span class="ico">🗓️</span>日別</button>
+  <button data-tab="weekly" role="tab" aria-selected="false"><span class="ico">📆</span>週別</button>
+  <button data-tab="monthly" role="tab" aria-selected="false"><span class="ico">📊</span>月別</button>
+  <button data-tab="settings" role="tab" aria-selected="false"><span class="ico">⚙️</span>設定</button>
+</nav>
+
+<input type="file" id="importFile" accept="application/json,.json" hidden>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const KEY = "foodBudget.v1";
+const el = id => document.getElementById(id);
+let currentTab = "today";
+let state = load();
+
+/* ---------- persistence ---------- */
+function load(){
+  try{ const raw = localStorage.getItem(KEY); if(raw) return sanitize(JSON.parse(raw)); }catch(e){}
+  return { dailyAllowance:1500, startDate:null, entries:[] };
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); return true; }catch(e){ toast("保存できませんでした（端末の空き容量をご確認ください）"); return false; } }
+function uid(){ try{ return crypto.randomUUID(); }catch(e){ return String(Date.now())+"-"+Math.random().toString(16).slice(2); } }
+
+function sanitize(o){
+  // Reject anything that is not a recognizable backup so callers can distinguish
+  // "corrupt / wrong file" from "empty valid backup" (prevents silently wiping data on import).
+  if(!o || typeof o!=="object" || Array.isArray(o) || !Array.isArray(o.entries))
+    throw new Error("not a valid backup");
+  const today = todayStr();
+  const out = { dailyAllowance:1500, startDate:null, entries:[] };
+  if(typeof o.dailyAllowance==="number" && isFinite(o.dailyAllowance) && o.dailyAllowance>0) out.dailyAllowance = Math.round(o.dailyAllowance);
+  if(isValidDate(o.startDate) && o.startDate<=today) out.startDate = o.startDate;
+  const seen = new Set();
+  for(const e of o.entries){
+    if(e && isValidDate(e.date) && e.date<=today && typeof e.amount==="number" && isFinite(e.amount) && e.amount>0){
+      let id = (typeof e.id==="string" && e.id && !seen.has(e.id)) ? e.id : uid();
+      while(seen.has(id)) id = uid();
+      seen.add(id);
+      out.entries.push({
+        id,
+        date: e.date,
+        amount: Math.round(e.amount),
+        memo: typeof e.memo==="string" ? e.memo : "",
+        ts: (typeof e.ts==="number" && isFinite(e.ts)) ? e.ts : 0
+      });
+    }
+  }
+  return out;
+}
+
+/* ---------- date helpers (local time) ---------- */
+function pad(n){ return String(n).padStart(2,"0"); }
+function fmt(dt){ return dt.getFullYear()+"-"+pad(dt.getMonth()+1)+"-"+pad(dt.getDate()); }
+function todayStr(){ return fmt(new Date()); }
+function parseD(s){ const p = s.split("-"); return new Date(+p[0], +p[1]-1, +p[2]); }
+function addDays(s,n){ const dt = parseD(s); dt.setDate(dt.getDate()+n); return fmt(dt); }
+const WD = "日月火水木金土";
+function wd(s){ return WD[parseD(s).getDay()]; }
+function fmtMD(s){ const p = s.split("-"); return (+p[1])+"/"+(+p[2]); }
+function isValidDate(s){
+  if(typeof s!=="string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const p = s.split("-").map(Number);
+  const dt = new Date(p[0], p[1]-1, p[2]);
+  return dt.getFullYear()===p[0] && dt.getMonth()===p[1]-1 && dt.getDate()===p[2];
+}
+
+/* ---------- core budget model ---------- */
+function startDate(){
+  let earliest = null;
+  for(const e of state.entries){ if(earliest===null || e.date<earliest) earliest = e.date; }
+  let s = state.startDate || earliest || todayStr();
+  if(earliest && earliest<s) s = earliest;   // never orphan an earlier entry
+  return s;
+}
+function entriesByDate(){
+  const m = {};
+  for(const e of state.entries){ (m[e.date] = m[e.date] || []).push(e); }
+  for(const k in m) m[k].sort((a,b)=> (a.ts||0)-(b.ts||0));
+  return m;
+}
+// One row per calendar day from start to (today or latest entry). Allowance accrues only up to today.
+function dailySeries(){
+  let start = startDate();
+  const today = todayStr();
+  const floor = addDays(today, -3660);   // ~10 years back: bounds render size, keeps today in range
+  if(start < floor) start = floor;
+  let end = today;
+  for(const e of state.entries){ if(e.date>end) end = e.date; }
+  const spent = {};
+  for(const e of state.entries){ spent[e.date] = (spent[e.date]||0) + e.amount; }
+  const out = []; let cum = 0; let guard = 0;
+  for(let d = start; d<=end && guard<20000; d = addDays(d,1), guard++){
+    const sp = spent[d] || 0;
+    const allow = (d<=today) ? state.dailyAllowance : 0;
+    const net = allow - sp;
+    cum += net;
+    out.push({ date:d, spent:sp, allowance:allow, net, cum });
+  }
+  return out;
+}
+function groupBy(days, keyFn){
+  const map = new Map();
+  for(const d of days){
+    const k = keyFn(d.date);
+    if(!map.has(k)) map.set(k, { key:k, allowance:0, spent:0, net:0, cum:d.cum });
+    const g = map.get(k);
+    g.allowance += d.allowance; g.spent += d.spent; g.net += d.net; g.cum = d.cum; // cum = last day in group
+  }
+  return [...map.values()].sort((a,b)=> a.key<b.key ? -1 : 1);
+}
+function weekKey(dateStr){ const dow = (parseD(dateStr).getDay()+6)%7; return addDays(dateStr, -dow); } // Monday start
+function weekly(){ return groupBy(dailySeries(), weekKey); }
+function monthly(){ return groupBy(dailySeries(), d => d.slice(0,7)); }
+
+/* ---------- formatting ---------- */
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function y(n){ return "¥" + Math.round(n).toLocaleString("ja-JP"); }
+function signed(n){ n = Math.round(n); const s = n>0?"+":n<0?"−":"±"; return s+"¥"+Math.abs(n).toLocaleString("ja-JP"); }
+function cls(n){ return n>0?"pos":n<0?"neg":"zero"; }
+function niceDate(s){ const p = s.split("-"); return (+p[0])+"年"+(+p[1])+"月"+(+p[2])+"日("+wd(s)+")"; }
+function dayLabel(s){
+  const t = todayStr();
+  if(s===t) return "今日 "+fmtMD(s)+"("+wd(s)+")";
+  if(s===addDays(t,-1)) return "昨日 "+fmtMD(s)+"("+wd(s)+")";
+  return fmtMD(s)+"("+wd(s)+")";
+}
+function entryRow(e){
+  return '<div class="entry"><div class="entry-memo">'+esc(e.memo || "（メモなし）")+'</div>'+
+    '<div class="entry-amt">'+y(e.amount)+'</div>'+
+    '<button class="del" data-action="del" data-id="'+esc(e.id)+'" aria-label="削除">×</button></div>';
+}
+
+/* ---------- renderers ---------- */
+function renderToday(){
+  const today = todayStr();
+  const series = dailySeries();
+  const row = series.find(d=>d.date===today) || { spent:0, allowance:state.dailyAllowance, net:state.dailyAllowance, cum:state.dailyAllowance };
+  const allow = state.dailyAllowance, spent = row.spent, remain = allow - spent, cum = row.cum;
+  const pct = allow>0 ? Math.min(100, spent/allow*100) : 0;
+  const days = series.filter(d=>d.date<=today).length;
+  el("todayStats").innerHTML =
+    '<div class="card hero '+cls(remain)+'">'+
+      '<div class="label">今日の残り</div>'+
+      '<div class="big">'+signed(remain)+'</div>'+
+      '<div class="sub">支給 '+y(allow)+' 中 '+y(spent)+' 使用</div>'+
+      '<div class="bar"><div class="bar-fill '+(spent>allow?"over":"")+'" style="width:'+pct+'%"></div></div>'+
+    '</div>'+
+    '<div class="card cum '+cls(cum)+'">'+
+      '<div class="label">累計収支</div>'+
+      '<div class="mid">'+signed(cum)+'</div>'+
+      '<div class="sub">開始 '+fmtMD(startDate())+' から '+days+'日</div>'+
+    '</div>';
+  const list = (entriesByDate()[today] || []);
+  el("todayEntries").innerHTML = '<div class="section-title">今日の記録</div>' +
+    (list.length ? list.map(entryRow).join("") : '<div class="empty">まだ記録がありません<br>使ったらその都度追加してください</div>');
+}
+
+function renderDaily(){
+  const open = new Set([...el("tab-daily").querySelectorAll("details.day[open]")].map(d=>d.dataset.date));
+  const series = dailySeries().slice().reverse();
+  const ebd = entriesByDate();
+  const body = series.map(d=>{
+    const es = ebd[d.date] || [];
+    const inner = es.length ? es.map(entryRow).join("") : '<div class="empty small">支出なし</div>';
+    return '<details class="day" data-date="'+d.date+'"'+(open.has(d.date)?" open":"")+'><summary>'+
+        '<div class="sum-main"><span class="d-date">'+dayLabel(d.date)+'</span>'+
+        '<span class="d-net '+cls(d.net)+'">'+signed(d.net)+'</span></div>'+
+        '<div class="sum-sub"><span>使用 '+y(d.spent)+' / 支給 '+y(d.allowance)+'</span>'+
+        '<span class="'+cls(d.cum)+'">累計 '+signed(d.cum)+'</span></div>'+
+      '</summary><div class="entries">'+inner+'</div></details>';
+  }).join("");
+  el("tab-daily").innerHTML = '<div class="section-title">日別（新しい順・タップで内訳）</div>' +
+    (series.length ? body : '<div class="empty">データがありません</div>');
+}
+
+function renderPeriods(sectionId, groups, labelFn, title){
+  const body = groups.slice().reverse().map(g=>
+    '<div class="period">'+
+      '<div class="p-head"><span class="p-label">'+labelFn(g.key)+'</span>'+
+      '<span class="p-net '+cls(g.net)+'">'+signed(g.net)+'</span></div>'+
+      '<div class="p-sub"><span>使用 '+y(g.spent)+' / 支給 '+y(g.allowance)+'</span>'+
+      '<span class="'+cls(g.cum)+'">累計 '+signed(g.cum)+'</span></div>'+
+    '</div>'
+  ).join("");
+  el(sectionId).innerHTML = '<div class="section-title">'+title+'</div>' +
+    (groups.length ? body : '<div class="empty">データがありません</div>');
+}
+function renderWeekly(){ renderPeriods("tab-weekly", weekly(), k => fmtMD(k)+"〜"+fmtMD(addDays(k,6)), "週別（月曜始まり・新しい順）"); }
+function renderMonthly(){ renderPeriods("tab-monthly", monthly(), k => { const p=k.split("-"); return (+p[0])+"年"+(+p[1])+"月"; }, "月別（新しい順）"); }
+
+function renderSettings(){
+  let earliest = null;
+  for(const e of state.entries){ if(earliest===null || e.date<earliest) earliest = e.date; }
+  const startMax = earliest || todayStr();
+  el("tab-settings").innerHTML =
+    '<div class="section-title">設定</div>'+
+    '<div class="card">'+
+      '<label class="field">1日の支給額（円）<input id="setAllowance" type="number" inputmode="numeric" min="1" step="1" value="'+state.dailyAllowance+'"></label>'+
+      '<label class="field">記録の開始日（1500円/日の起算日）<input id="setStart" type="date" value="'+startDate()+'" max="'+startMax+'"></label>'+
+      '<p class="note" style="margin-top:-6px">前にずらすと、その日から1日'+y(state.dailyAllowance)+'で計算し直します（すでにある記録より後の日付にはできません）。</p>'+
+      '<button class="btn" data-action="saveSettings">保存</button>'+
+    '</div>'+
+    '<div class="section-title">バックアップ</div>'+
+    '<div class="card">'+
+      '<p class="note">データはこの端末のブラウザ内だけに保存されます。機種変更やブラウザのデータ削除で消えるので、ときどきバックアップの書き出しをおすすめします。</p>'+
+      '<button class="btn" data-action="export">バックアップを書き出す</button>'+
+      '<button class="btn secondary" data-action="import">バックアップを読み込む</button>'+
+    '</div>'+
+    '<div class="card"><button class="btn danger" data-action="reset">全データを削除</button></div>'+
+    '<div class="foot">食費家計簿 ・ オフラインで動作 ・ v1</div>';
+}
+
+/* ---------- navigation ---------- */
+function render(){
+  el("headerDate").textContent = niceDate(todayStr());
+  ({ today:renderToday, daily:renderDaily, weekly:renderWeekly, monthly:renderMonthly, settings:renderSettings }[currentTab])();
+}
+function refreshDate(){
+  const d = el("date");
+  d.min = startDate();
+  d.max = todayStr();
+  d.value = todayStr();
+}
+function show(tab){
+  currentTab = tab;
+  document.querySelectorAll("nav.tabbar button").forEach(b=>{
+    const on = b.dataset.tab===tab;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  document.querySelectorAll("main > section").forEach(s=> s.hidden = (s.id !== "tab-"+tab));
+  if(tab==="today") refreshDate();
+  render();
+}
+
+/* ---------- actions ---------- */
+function msg(t){ el("formMsg").textContent = t; if(t) setTimeout(()=>{ if(el("formMsg").textContent===t) el("formMsg").textContent=""; }, 2600); }
+let toastTimer;
+function toast(t, action){
+  const n = el("toast");
+  n.textContent = "";
+  n.appendChild(document.createTextNode(t));
+  if(action){
+    const b = document.createElement("button");
+    b.textContent = action.label;
+    b.onclick = ()=>{ n.classList.remove("show"); clearTimeout(toastTimer); action.fn(); };
+    n.appendChild(b);
+  }
+  n.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> n.classList.remove("show"), action ? 4500 : 1800);
+}
+
+function addEntry(){
+  const amount = Math.round(Number(el("amt").value));
+  const date = el("date").value || todayStr();
+  const memo = el("memo").value.trim();
+  if(!Number.isFinite(amount) || amount<=0){ msg("金額を正しく入力してください"); return; }
+  const min = startDate(), max = todayStr();
+  if(!isValidDate(date) || date>max || date<min){ msg("日付は "+fmtMD(min)+"〜今日 の範囲にしてください"); return; }
+  state.entries.push({ id:uid(), date, amount, memo, ts:Date.now() });
+  if(!save()){ state.entries.pop(); render(); return; }
+  el("amt").value = ""; el("memo").value = ""; msg(""); el("amt").focus();
+  render();
+}
+function delEntry(id){
+  const idx = state.entries.findIndex(e=> e.id === id);
+  if(idx < 0) return;
+  const removed = state.entries[idx];
+  state.entries.splice(idx, 1);
+  if(!save()){ state.entries.splice(idx, 0, removed); render(); return; }
+  render();
+  toast("削除しました", { label:"元に戻す", fn:()=>{ state.entries.push(removed); if(save()) render(); } });
+}
+function saveSettings(){
+  const a = Math.round(Number(el("setAllowance").value));
+  const s = el("setStart").value;
+  if(!Number.isFinite(a) || a<=0){ toast("支給額を正しく入力してください"); return; }
+  if(s && (!isValidDate(s) || s>todayStr())){ toast("開始日が正しくありません"); return; }
+  const prev = { dailyAllowance:state.dailyAllowance, startDate:state.startDate };
+  state.dailyAllowance = a;
+  if(s && isValidDate(s)) state.startDate = s;
+  if(!save()){ state.dailyAllowance = prev.dailyAllowance; state.startDate = prev.startDate; return; }
+  render(); toast("保存しました");
+}
+function exportData(){
+  try{
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type:"application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "food-budget-backup-"+todayStr()+".json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=> URL.revokeObjectURL(url), 1000);
+    toast("バックアップを書き出しました");
+  }catch(e){ toast("書き出しに失敗しました"); }
+}
+function resetData(){
+  if(confirm("本当に全データを削除しますか？この操作は元に戻せません。")){
+    state = { dailyAllowance: state.dailyAllowance, startDate:null, entries:[] };
+    save(); render(); toast("削除しました");
+  }
+}
+
+/* ---------- wiring ---------- */
+el("addForm").addEventListener("submit", e=>{ e.preventDefault(); addEntry(); });
+el("importFile").addEventListener("change", e=>{
+  const f = e.target.files && e.target.files[0]; if(!f){ return; }
+  const r = new FileReader();
+  r.onload = ()=>{
+    try{
+      const next = sanitize(JSON.parse(r.result));   // throws if the file is not a valid backup
+      if(state.entries.length && !confirm("いまの記録（"+state.entries.length+"件）を、読み込むデータ（"+next.entries.length+"件）で置き換えます。よろしいですか？")) return;
+      const prev = state;
+      state = next;
+      if(!save()){ state = prev; return; }
+      render(); toast("読み込みました（"+next.entries.length+"件）");
+    }catch(err){
+      toast("このファイルは家計簿のバックアップではないようです");
+    }finally{ e.target.value=""; }
+  };
+  r.onerror = ()=>{ toast("読み込みに失敗しました"); e.target.value=""; };
+  r.readAsText(f);
+});
+document.addEventListener("click", e=>{
+  const nav = e.target.closest("nav.tabbar button");
+  if(nav){ show(nav.dataset.tab); return; }
+  const b = e.target.closest("[data-action]");
+  if(!b) return;
+  const a = b.dataset.action;
+  if(a==="del") delEntry(b.dataset.id);
+  else if(a==="saveSettings") saveSettings();
+  else if(a==="export") exportData();
+  else if(a==="import") el("importFile").click();
+  else if(a==="reset") resetData();
+});
+
+/* Re-sync "today" when the app regains focus (handles crossing midnight while open). */
+function onWake(){ if(currentTab==="today") refreshDate(); render(); }
+window.addEventListener("focus", onWake);
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) onWake(); });
+
+/* ---------- init ---------- */
+if(!state.startDate){ state.startDate = todayStr(); save(); }  // anchor the ¥/day accrual on first launch
+refreshDate();
+show("today");
+</script>
+</body>
+</html>

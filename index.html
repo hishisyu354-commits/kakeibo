@@ -505,7 +505,9 @@ window.addEventListener("focus", onWake);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) onWake(); });
 
 /* ---------- init ---------- */
-if(!state.startDate){ state.startDate = todayStr(); save(); }  // anchor the ¥/day accrual on first launch
+const DEFAULT_START = "2026-07-01";                                 // 記録の起算日（1日1500円の開始日）
+if(!state.startDate){ state.startDate = DEFAULT_START; save(); }    // 初回起動は7/1から
+else if(!state.entries.length && state.startDate > DEFAULT_START){ state.startDate = DEFAULT_START; save(); } // まだ記録が無い端末は7/1に揃える
 refreshDate();
 show("today");
 </script>

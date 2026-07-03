@@ -204,9 +204,10 @@ let state = load();
 /* ---------- persistence ---------- */
 function load(){
   try{ const raw = localStorage.getItem(KEY); if(raw) return sanitize(JSON.parse(raw)); }catch(e){}
-  return { dailyAllowance:1500, startDate:null, entries:[] };
+  return { dailyAllowance:1500, startDate:null, syncUrl:"", entries:[] };
 }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); return true; }catch(e){ toast("保存できませんでした（端末の空き容量をご確認ください）"); return false; } }
+function isSyncUrl(u){ try{ const p=new URL(u); return p.protocol==="https:" && p.hostname==="script.google.com"; }catch(e){ return false; } }
 function uid(){ try{ return crypto.randomUUID(); }catch(e){ return String(Date.now())+"-"+Math.random().toString(16).slice(2); } }
 
 function sanitize(o){
@@ -215,22 +216,26 @@ function sanitize(o){
   if(!o || typeof o!=="object" || Array.isArray(o) || !Array.isArray(o.entries))
     throw new Error("not a valid backup");
   const today = todayStr();
-  const out = { dailyAllowance:1500, startDate:null, entries:[] };
+  const out = { dailyAllowance:1500, startDate:null, syncUrl:"", entries:[] };
   if(typeof o.dailyAllowance==="number" && isFinite(o.dailyAllowance) && o.dailyAllowance>0) out.dailyAllowance = Math.round(o.dailyAllowance);
   if(isValidDate(o.startDate) && o.startDate<=today) out.startDate = o.startDate;
+  // syncUrl はレスポンスがJSとして実行される(JSONP)ため、自分のApps Script(https+script.google.com)以外は破棄する
+  if(typeof o.syncUrl==="string" && o.syncUrl.length<=2000 && isSyncUrl(o.syncUrl)) out.syncUrl = o.syncUrl;
   const seen = new Set();
   for(const e of o.entries){
     if(e && isValidDate(e.date) && e.date<=today && typeof e.amount==="number" && isFinite(e.amount) && e.amount>0){
       let id = (typeof e.id==="string" && e.id && !seen.has(e.id)) ? e.id : uid();
       while(seen.has(id)) id = uid();
       seen.add(id);
-      out.entries.push({
+      const ent = {
         id,
         date: e.date,
         amount: Math.round(e.amount),
         memo: typeof e.memo==="string" ? e.memo : "",
         ts: (typeof e.ts==="number" && isFinite(e.ts)) ? e.ts : 0
-      });
+      };
+      if(typeof e.src==="string" && e.src) ent.src = e.src;   // keep card-sync source id (dedupe)
+      out.entries.push(ent);
     }
   }
   return out;
@@ -393,6 +398,14 @@ function renderSettings(){
       '<p class="note">三井住友（Vpass／Olive）の「ご利用明細」CSVを取り込めます。会員サイトで明細をCSVでダウンロード → 下のボタンで選ぶ → 食費だけチェックして取り込み。<b>口座番号やパスワードは不要</b>（ファイルは端末内で処理され、外部に送信されません）。</p>'+
       '<button class="btn" data-action="importCsv">CSVファイルを選ぶ</button>'+
     '</div>'+
+    '<div class="section-title">自動同期（カード連携・ベータ）</div>'+
+    '<div class="card">'+
+      '<p class="note">食費専用カードの利用通知メールから、Google Apps Script経由で自動取り込みします。発行した「Web App URL」を貼ると、<b>開くたび＆約1分ごとに自動同期</b>します（設定手順は別途ご案内します）。空欄にすると同期は止まります。</p>'+
+      '<label class="field">同期URL（Apps Script）<input id="setSyncUrl" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/.../exec?token=..." value="'+esc(state.syncUrl||"")+'"></label>'+
+      '<button class="btn" data-action="saveSync">保存</button>'+
+      '<button class="btn secondary" data-action="syncNow">今すぐ同期</button>'+
+      '<div class="note" id="syncStatus" style="margin-top:10px">'+esc(lastSyncMsg||(state.syncUrl?"保存済み（まだ同期していません）":"未設定"))+'</div>'+
+    '</div>'+
     '<div class="section-title">バックアップ</div>'+
     '<div class="card">'+
       '<p class="note">データはこの端末のブラウザ内だけに保存されます。機種変更やブラウザのデータ削除で消えるので、ときどきバックアップの書き出しをおすすめします。</p>'+
@@ -478,7 +491,9 @@ function saveSettings(){
 }
 function exportData(){
   try{
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type:"application/json" });
+    const data = Object.assign({}, state);
+    delete data.syncUrl;   // 同期URLはtoken入りの秘密情報なのでバックアップには含めない（端末内にのみ保持）
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type:"application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = "food-budget-backup-"+todayStr()+".json";
@@ -488,8 +503,9 @@ function exportData(){
   }catch(e){ toast("書き出しに失敗しました"); }
 }
 function resetData(){
-  if(confirm("本当に全データを削除しますか？この操作は元に戻せません。")){
-    state = { dailyAllowance: state.dailyAllowance, startDate:null, entries:[] };
+  if(confirm("本当に全データを削除しますか？この操作は元に戻せません。\n（自動同期のURL設定も解除されます。再開するには設定でURLを貼り直してください）")){
+    // syncUrl も意図的に解除する：残すと次の同期で削除したはずの明細が全部復活してしまうため
+    state = { dailyAllowance: state.dailyAllowance, startDate:null, syncUrl:"", entries:[] };
     save(); render(); toast("削除しました");
   }
 }
@@ -598,11 +614,20 @@ function openCsvFile(file){
 }
 function recomputeCands(prevChecked){
   const cands=buildCandidates(csvState.rows, csvState.map);
-  const counts={}; for(const e of state.entries){ const k=entryKey(e); counts[k]=(counts[k]||0)+1; } // multiplicity-aware dedupe
+  // multiplicity-aware dedupe（各既存エントリは1候補にのみ対応）:
+  //  - 手入力/CSV由来（srcなし）は date|amount|memo の完全キーで照合
+  //  - 自動同期由来（srcあり）は店名表記がCSVと揃わないため date|amount で照合
+  const counts={}, syncDA={};
+  for(const e of state.entries){
+    if(e.src){ const dk=e.date+"|"+e.amount; syncDA[dk]=(syncDA[dk]||0)+1; }
+    else { const k=entryKey(e); counts[k]=(counts[k]||0)+1; }
+  }
   const start=startDate(), today=todayStr();
   csvState.cands=cands.map(c=>{
     const k=entryKey(c);
-    let dup=false; if((counts[k]||0)>0){ dup=true; counts[k]--; }
+    let dup=false;
+    if((counts[k]||0)>0){ dup=true; counts[k]--; }
+    else { const dk=c.date+"|"+c.amount; if((syncDA[dk]||0)>0){ dup=true; syncDA[dk]--; } }
     const inRange = c.date>=start && c.date<=today;
     const food=looksFood(c.memo);
     return { date:c.date, amount:c.amount, memo:c.memo, dup, inRange, food, checked:(food && !dup && inRange) };
@@ -698,6 +723,59 @@ function csvImportSelected(){
 }
 function closeCsvModal(){ const m=el("csvModal"); if(m) m.remove(); csvState=null; }
 
+/* ========== auto-sync (food-only card statement via Apps Script, JSONP) ========== */
+let syncing=false, lastSyncMsg="";
+function nowHM(){ const d=new Date(); return pad(d.getHours())+":"+pad(d.getMinutes()); }
+function syncNow(manual){
+  const url=(state.syncUrl||"").trim();
+  if(!url){ if(manual) toast("同期URLが未設定です"); return; }
+  if(syncing) return;
+  syncing=true;
+  const cb="__sync_"+Date.now();
+  const s=document.createElement("script");
+  let done=false;
+  const cleanup=()=>{ try{ delete window[cb]; }catch(e){ window[cb]=undefined; } if(s.parentNode) s.parentNode.removeChild(s); syncing=false; };
+  const timer=setTimeout(()=>{ if(done) return; done=true; cleanup(); if(manual) toast("同期に失敗しました（タイムアウト）"); }, 15000);
+  window[cb]=res=>{ if(done) return; done=true; clearTimeout(timer); cleanup(); handleSyncResult(res, manual); };
+  s.onerror=()=>{ if(done) return; done=true; clearTimeout(timer); cleanup(); if(manual) toast("同期に失敗しました（URLをご確認ください）"); };
+  s.src = url + (url.indexOf("?")>=0?"&":"?") + "callback=" + cb + "&_t=" + Date.now();
+  document.body.appendChild(s);
+}
+function handleSyncResult(res, manual){
+  if(el("csvModal")) return;  // CSVモーダルの重複判定スナップショットを無効化しないよう、開いている間は反映しない（次の同期で取り込まれる）
+  if(!res || res.ok!==true || !Array.isArray(res.transactions)){ if(manual) toast("同期に失敗しました"+(res && res.error ? "："+res.error : "")); return; }
+  const haveSrc=new Set(state.entries.map(e=>e.src).filter(Boolean));
+  // 手入力/CSV取り込み分（srcなし）とは date+金額 で照合し、同じ買い物の二重計上を防ぐ（件数ぶんだけ消費）
+  const daCounts={};
+  for(const e of state.entries){ if(!e.src){ const k=e.date+"|"+e.amount; daCounts[k]=(daCounts[k]||0)+1; } }
+  const start=startDate(), today=todayStr(), before=state.entries.length, t0=Date.now();
+  let added=0;
+  res.transactions.forEach((tx,k)=>{
+    if(!tx || typeof tx.id!=="string" || haveSrc.has(tx.id)) return;
+    if(!isValidDate(tx.date) || tx.date<start || tx.date>today) return;
+    const amount=Math.round(Number(tx.amount));
+    if(!Number.isFinite(amount) || amount<=0) return;
+    const dk=tx.date+"|"+amount;
+    if((daCounts[dk]||0)>0){ daCounts[dk]--; return; }   // すでに手入力/CSVで記録済みとみなす
+    state.entries.push({ id:uid(), date:tx.date, amount, memo:(typeof tx.memo==="string" && tx.memo)?tx.memo:"カード", ts:t0+k, src:tx.id });
+    haveSrc.add(tx.id); added++;
+  });
+  if(added>0 && !save()){ state.entries.length=before; return; }   // rollback if storage fails
+  lastSyncMsg="最終同期 "+nowHM()+"（新規 "+added+"件）";
+  const st=el("syncStatus"); if(st) st.textContent=lastSyncMsg;
+  if(added>0 && currentTab!=="settings") render();   // 設定タブ編集中はフォームをinnerHTMLで作り直さない（入力消失防止）
+  if(manual) toast(added>0 ? added+"件を同期しました" : "新しい明細はありません");
+}
+function saveSync(){
+  const u=el("setSyncUrl").value.trim();
+  if(u && !isSyncUrl(u)){ toast("Apps ScriptのURL（https://script.google.com/…）を入れてください"); return; }
+  const prev=state.syncUrl; state.syncUrl=u;
+  if(!save()){ state.syncUrl=prev; return; }
+  toast(u ? "保存しました" : "同期URLを消去しました");
+  renderSettings();
+  if(u) syncNow(true);
+}
+
 /* ---------- wiring ---------- */
 el("addForm").addEventListener("submit", e=>{ e.preventDefault(); addEntry(); });
 el("csvFile").addEventListener("change", e=>{ const f=e.target.files && e.target.files[0]; if(f) openCsvFile(f); e.target.value=""; });
@@ -707,6 +785,7 @@ el("importFile").addEventListener("change", e=>{
   r.onload = ()=>{
     try{
       const next = sanitize(JSON.parse(r.result));   // throws if the file is not a valid backup
+      if(!next.syncUrl) next.syncUrl = state.syncUrl;  // バックアップにはURLが入っていないため、この端末の同期設定は引き継ぐ
       if(state.entries.length && !confirm("いまの記録（"+state.entries.length+"件）を、読み込むデータ（"+next.entries.length+"件）で置き換えます。よろしいですか？")) return;
       const prev = state;
       state = next;
@@ -730,11 +809,13 @@ document.addEventListener("click", e=>{
   else if(a==="export") exportData();
   else if(a==="import") el("importFile").click();
   else if(a==="importCsv") el("csvFile").click();
+  else if(a==="saveSync") saveSync();
+  else if(a==="syncNow") syncNow(true);
   else if(a==="reset") resetData();
 });
 
 /* Re-sync "today" when the app regains focus (handles crossing midnight while open). */
-function onWake(){ if(el("csvModal")) return; if(currentTab==="today") refreshDate(); render(); }
+function onWake(){ if(el("csvModal")) return; if(currentTab==="today") refreshDate(); if(state.syncUrl) syncNow(false); if(currentTab!=="settings") render(); }  // 設定編集中に入力欄を作り直さない
 window.addEventListener("focus", onWake);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) onWake(); });
 
@@ -744,6 +825,8 @@ if(!state.startDate){ state.startDate = DEFAULT_START; save(); }    // 初回起
 else if(!state.entries.length && state.startDate > DEFAULT_START){ state.startDate = DEFAULT_START; save(); } // まだ記録が無い端末は7/1に揃える
 refreshDate();
 show("today");
+if(state.syncUrl) syncNow(false);                                             // sync on launch if configured
+setInterval(()=>{ if(state.syncUrl && !document.hidden && !el("csvModal")) syncNow(false); }, 60000);  // and ~every minute
 </script>
 </body>
 </html>

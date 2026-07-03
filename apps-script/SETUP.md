@@ -13,7 +13,7 @@
 1. https://script.google.com を開く → 「新しいプロジェクト」
 2. 既定の `Code.gs` の中身を全部消し、この folder の **Code.gs** の中身を貼り付け
 3. 冒頭の `CONFIG` を編集：
-   - `TOKEN` … 好きな長いランダム文字列（例 `kakeibo-8f3a9c2b7d`）。人に教えない
+   - `TOKEN` … 好きな長いランダム文字列（例 `kakeibo-XXXXXXXXXXXX` の X を自分で置き換える）。**この例をそのまま使わない**・人に教えない
    - `GEMINI_API_KEY` … 手順2で発行するキー（食材ストッカーを使う場合）
    - `CARD_LAST4` … 食費カードの**下4桁**（例 `1234`）。分からなければ空 `''` のままでも可
 4. 左メニューの **プロジェクトの設定（⚙）** → タイムゾーンが **「(GMT+09:00) 東京」** になっているか確認（通知メールの時刻に影響）
@@ -53,7 +53,7 @@
 ## 6. アプリに URL を貼る（両アプリ共通・同じURL）
 
 URL の末尾に **`?token=あなたのTOKEN`** を付けた形を使います：
-`https://script.google.com/macros/s/XXXX/exec?token=kakeibo-8f3a9c2b7d`
+`https://script.google.com/macros/s/XXXX/exec?token=あなたのTOKEN`
 
 - 💰 家計簿 → **設定 → 自動同期（カード連携）** の「同期URL」に貼る → 保存 → 「今すぐ同期」
 - 🧺 食材ストッカー → **設定 → AI連携** の「連携URL」に貼る → 保存 → 「接続テスト」

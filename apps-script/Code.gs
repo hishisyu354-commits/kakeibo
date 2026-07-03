@@ -47,6 +47,18 @@ var CONFIG = {
   TZ: 'Asia/Tokyo'
 };
 
+// 秘密情報（トークン・APIキー等）はスクリプトプロパティがあればそれを優先する。
+// これによりコード本体にはキーを一切残さず、自動デプロイ(clasp)でコードを上書きしても
+// キーが消えない。設定手順は SETUP.md 参照。プロパティ未設定なら上のCONFIG値を使う。
+(function(){
+  try{
+    var props = PropertiesService.getScriptProperties().getProperties();
+    ['TOKEN','GEMINI_API_KEY','CARD_LAST4','NOTIFY_EMAIL','GEMINI_MODEL','GMAIL_QUERY'].forEach(function(k){
+      if(props[k] != null && props[k] !== '') CONFIG[k] = props[k];
+    });
+  }catch(e){}
+})();
+
 /** アプリからの取得口（JSONP）。デプロイ後の /exec URL をアプリに貼ります。 */
 function doGet(e){
   var p = (e && e.parameter) ? e.parameter : {};
@@ -147,6 +159,7 @@ function doPost(e){
     } else {
       var action = String(body.action || p.action || '');
       if(action === 'ai')           out = { ok:true, item: extractFoodInfo_(body.image, body.mime, body.today) };
+      else if(action === 'receipt') out = { ok:true, receipt: extractReceipt_(body.image, body.mime, body.today) };
       else if(action === 'recipes') out = { ok:true, recipes: suggestRecipes_(body.items, body.meal, body.genre) };
       else if(action === 'recipe')  out = { ok:true, recipe: recipeDetail_(body.name, body.uses, body.buy) };
       else if(action === 'pantry')  out = savePantry_(body.items, body.notifyDays);
@@ -185,7 +198,10 @@ function geminiJson_(parts){
   var text = '';
   if(parts){ for(var i = 0; i < parts.length; i++){ if(parts[i] && typeof parts[i].text === 'string') text += parts[i].text; } }
   if(!text) throw new Error('AIの応答が空でした。もう一度お試しください');
-  return JSON.parse(text);
+  var parsed = JSON.parse(text);
+  // responseMimeType=application/json でも null や配列が返り得るため、オブジェクト以外は {} に丸める
+  // （呼び出し側は out.xxx を読むだけなので、これでクラッシュせず各バリデーションが空扱いにする）
+  return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
 }
 
 /** 写真 → { name, expiry(YYYY-MM-DD|null), kind } */
@@ -211,6 +227,33 @@ function extractFoodInfo_(imageB64, mime, todayStr){
   var expiry = (typeof out.expiry === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(out.expiry)) ? out.expiry : null;
   var kind = (out.kind === '消費期限' || out.kind === '賞味期限') ? out.kind : null;
   return { name: name, expiry: expiry, kind: kind };
+}
+
+/** レシート写真 → { store, date(YYYY-MM-DD|null), total(number|null), items:[食品名] } */
+function extractReceipt_(imageB64, mime, todayStr){
+  if(typeof imageB64 !== 'string' || !imageB64) throw new Error('画像がありません');
+  if(imageB64.length > 8 * 1024 * 1024) throw new Error('画像が大きすぎます');
+  var today = /^\d{4}-\d{2}-\d{2}$/.test(String(todayStr)) ? String(todayStr)
+            : Utilities.formatDate(new Date(), CONFIG.TZ, 'yyyy-MM-dd');
+  var prompt =
+    'これはお店のレシートの写真です。次のJSONだけを返してください:\n' +
+    '{"store": string, "date": string|null, "total": number|null, "items": [string]}\n' +
+    '- store: 店名（読み取れなければ空文字）\n' +
+    '- date: 購入日を YYYY-MM-DD で。今日(' + today + ')より未来にはしない。読み取れなければ null\n' +
+    '- total: 合計の支払金額（税込・数字のみ、通貨記号やカンマ不要）。読み取れなければ null\n' +
+    '- items: 買った「食品・食材」の短い一般名の配列（例: 牛乳, 卵, 豚こま肉, トマト）。' +
+    'レジ袋・日用品・非食品や、小計/割引/ポイント/合計などの行は含めない。ブランド名・容量・数量・金額は含めない。最大30個\n' +
+    '- 食品が無ければ items は空配列でよい';
+  var out = geminiJson_([
+    { inline_data: { mime_type: (mime === 'image/png' ? 'image/png' : 'image/jpeg'), data: imageB64 } },
+    { text: prompt }
+  ]);
+  var store = (typeof out.store === 'string') ? out.store.trim().slice(0, 40) : '';
+  var date = (typeof out.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(out.date) && out.date <= today) ? out.date : null;
+  var total = (typeof out.total === 'number' && isFinite(out.total) && out.total > 0) ? Math.round(out.total) : null;
+  var items = Array.isArray(out.items) ? out.items.filter(function(x){ return typeof x === 'string' && x.trim(); })
+                .map(function(x){ return x.trim().slice(0, 40); }).slice(0, 30) : [];
+  return { store: store, date: date, total: total, items: items };
 }
 
 /** 在庫リスト → 料理提案 { canMake:[], buyMore:[] } */

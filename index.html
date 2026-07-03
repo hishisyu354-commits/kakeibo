@@ -820,6 +820,25 @@ function onWake(){ if(el("csvModal")) return; if(currentTab==="today") refreshDa
 window.addEventListener("focus", onWake);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) onWake(); });
 
+// 別タブ（同一オリジンの食材ストッカーのレシート記録など）が同じ localStorage に足した明細を取り込む。
+// これをしないと、こちらのタブが古い state のまま save() した瞬間に相手の追加が消える（cross-tabのlost update）。
+// 取り込みは「未所持のidを追加するだけ」で、こちら側の明細は絶対に消さない・書き換えない。
+window.addEventListener("storage", e=>{
+  if(e.key!==KEY || !e.newValue) return;
+  let incoming; try{ incoming=JSON.parse(e.newValue); }catch(_){ return; }
+  if(!incoming || typeof incoming!=="object" || !Array.isArray(incoming.entries)) return;
+  const today=todayStr(), have=new Set(state.entries.map(x=>x.id));
+  let merged=0;
+  for(const en of incoming.entries){
+    if(!en || typeof en.id!=="string" || !en.id || have.has(en.id)) continue;
+    if(!isValidDate(en.date) || en.date>today || typeof en.amount!=="number" || !isFinite(en.amount) || en.amount<=0) continue;
+    const ent={ id:en.id, date:en.date, amount:Math.round(en.amount), memo:typeof en.memo==="string"?en.memo:"", ts:(typeof en.ts==="number"&&isFinite(en.ts))?en.ts:0 };
+    if(typeof en.src==="string" && en.src) ent.src=en.src;
+    state.entries.push(ent); have.add(en.id); merged++;
+  }
+  if(merged){ save(); if(!el("csvModal") && currentTab!=="settings") render(); }
+});
+
 /* ---------- init ---------- */
 const DEFAULT_START = "2026-07-01";                                 // 記録の起算日（1日1500円の開始日）
 if(!state.startDate){ state.startDate = DEFAULT_START; save(); }    // 初回起動は7/1から

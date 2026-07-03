@@ -102,6 +102,12 @@ main{ max-width:560px; margin:0 auto; padding:14px 14px 10px; }
 .d-steps li{ padding:5px 2px 5px 4px; font-size:14px; line-height:1.7; }
 .d-tips{ margin-top:12px; background:#f3f8f0; border-radius:10px; padding:10px 12px; font-size:13px; line-height:1.6; }
 
+/* receipt confirm */
+.rc-item{ display:flex; align-items:center; gap:10px; padding:9px 2px; border-bottom:1px solid var(--line); font-size:14.5px; }
+.rc-item:last-child{ border-bottom:none; }
+.rc-item input{ width:19px; height:19px; flex-shrink:0; }
+.item .act.cam{ padding:9px 10px; font-size:15px; }
+
 /* form fields */
 .field{ display:block; font-size:13px; font-weight:600; color:var(--sub); margin-top:12px; }
 .field input,.field select{
@@ -320,8 +326,12 @@ function itemRow(it, mode){
   const btn = mode==="stock"
     ? '<button class="act" data-action="out" data-id="'+esc(it.id)+'">切らした</button>'
     : '<button class="act buy" data-action="bought" data-id="'+esc(it.id)+'">買った</button>';
+  // 在庫の各行に「賞味期限を撮る」カメラボタン（期限未登録の行はより目立たせる）
+  const cam = mode==="stock"
+    ? '<button class="act cam" data-action="scanExp" data-id="'+esc(it.id)+'" aria-label="賞味期限を撮影"'+(it.expiry?"":' title="賞味期限を撮影"')+'>📷</button>'
+    : "";
   const sub = mode==="stock"
-    ? (it.expiry ? esc((it.kind||"賞味期限")+" "+it.expiry.replace(/-/g,"/")) : "期限未登録")
+    ? (it.expiry ? esc((it.kind||"賞味期限")+" "+it.expiry.replace(/-/g,"/")) : "期限未登録（📷で追加）")
     : "品切れ中";
   return '<div class="item">'+
       '<div class="body" data-action="edit" data-id="'+esc(it.id)+'">'+
@@ -329,6 +339,7 @@ function itemRow(it, mode){
         '<div class="sub">'+sub+'</div>'+
       '</div>'+
       (mode==="stock" ? chip(it) : "")+
+      cam+
       btn+
     '</div>';
 }
@@ -345,6 +356,7 @@ function renderStock(){
     '<button class="btn" data-action="photoAdd">📷 写真で追加</button>'+
     '<button class="btn secondary" data-action="manualAdd">＋ 手入力</button>'+
   '</div>';
+  html+='<button class="btn secondary" data-action="receiptAdd" style="margin-top:8px">🧾 レシートで追加（食材＋食費をまとめて記録）</button>';
   html+='<div class="section-title">在庫（'+list.length+'）</div>';
   html+= list.length
     ? list.map(it=>itemRow(it,"stock")).join("")
@@ -616,7 +628,18 @@ el("photoFile").addEventListener("change", async e=>{
   e.target.value="";
   const ctx=photoCtx; photoCtx=null;
   if(!f || !ctx) return;
-  const ov=openSheet('<h2><span class="spinner dark"></span>写真を読み取り中…</h2><p class="note">賞味期限と食材名をAIが読み取っています（数秒〜十数秒）。</p>');
+  if(ctx.mode==="receipt"){
+    const g=Number(openSheet('<h2><span class="spinner dark"></span>レシートを読み取り中…</h2><p class="note">店名・合計金額・食材をAIが読み取っています（数秒〜十数秒）。</p>').dataset.gen);
+    try{
+      const b64=await fileToJpeg(f, 1600);   // レシートは文字が細かいので少し大きめに
+      const res=await api({ action:"receipt", image:b64, mime:"image/jpeg", today:todayStr() }, 90000);
+      const rc=sanitizeReceipt(res.receipt);
+      if(!rc || (!rc.items.length && !rc.total)) throw new Error("レシートから読み取れませんでした。明るい場所で全体を大きく撮ってみてください");
+      if(currentSheetGen()===g) confirmReceiptSheet(rc);   // 読み込み中に別画面へ移っていたら無視
+    }catch(err){ if(currentSheetGen()===g){ closeSheet(); toast(shortErr(err)); } }
+    return;
+  }
+  const g=Number(openSheet('<h2><span class="spinner dark"></span>写真を読み取り中…</h2><p class="note">賞味期限と食材名をAIが読み取っています（数秒〜十数秒）。</p>').dataset.gen);
   try{
     const b64=await fileToJpeg(f, 1280);
     const res=await api({ action:"ai", image:b64, mime:"image/jpeg", today:todayStr() }, 90000);
@@ -627,8 +650,9 @@ el("photoFile").addEventListener("change", async e=>{
       kind: (ai.kind==="消費期限"||ai.kind==="賞味期限") ? ai.kind : null
     };
     if(!item.name && !item.expiry) throw new Error("写真から読み取れませんでした。明るい場所で期限の印字を大きく撮ってみてください");
-    confirmAiSheet(ctx, item);
+    if(currentSheetGen()===g) confirmAiSheet(ctx, item);   // 読み込み中に別画面へ移っていたら無視
   }catch(err){
+    if(currentSheetGen()!==g) return;   // 別画面に移っていたら何もしない（他シートを閉じない）
     closeSheet();
     toast(shortErr(err));
     if(ctx.mode==="add") manualAddSheet();
@@ -660,6 +684,105 @@ function fileToJpeg(file, maxDim){
     img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error("この画像形式は読み込めませんでした")); };
     img.src=url;
   });
+}
+
+/* ---------- receipt → 在庫＋食費家計簿 ---------- */
+const KAKEIBO_KEY = "foodBudget.v1";   // 同一オリジンの食費家計簿(../)と共有するlocalStorageキー
+function sanitizeReceipt(r){
+  if(!r || typeof r!=="object" || Array.isArray(r)) return null;
+  const store = typeof r.store==="string" ? r.store.slice(0,40) : "";
+  const date = (typeof r.date==="string" && isValidDate(r.date)) ? r.date : "";
+  const total = (typeof r.total==="number" && isFinite(r.total) && r.total>0) ? Math.round(r.total) : 0;
+  const items = Array.isArray(r.items) ? r.items.filter(x=>typeof x==="string" && x.trim()).map(x=>x.trim().slice(0,40)).slice(0,30) : [];
+  return { store, date, total, items };
+}
+function addItemsBulk(names){
+  // 500件上限を守りつつ複数追加（保存は呼び出し側で1回だけ）。追加できた件数を返す
+  let added=0;
+  for(const n of names){
+    if(state.items.length>=500) break;
+    const nm=String(n||"").trim().slice(0,40);
+    if(!nm) continue;
+    state.items.push({ id:uid(), name:nm, expiry:null, kind:null, state:"stock", addedAt:Date.now(), outAt:0 });
+    added++;
+  }
+  return added;
+}
+function addKakeiboExpense(date, amount, memo){
+  // 食費家計簿(foodBudget.v1)へ1件追加。既存データの構造は保ったまま entries に足すだけ。
+  // 戻り値: "added" | "dup"(同額同日が既存＝重複回避で追加せず) | "invalid" | "error"
+  try{
+    let ko=null;
+    try{ ko=JSON.parse(localStorage.getItem(KAKEIBO_KEY)||"null"); }catch(e){ ko=null; }
+    if(!ko || typeof ko!=="object" || Array.isArray(ko) || !Array.isArray(ko.entries)){
+      ko={ dailyAllowance:1500, startDate:null, syncUrl:"", entries:[] };
+    }
+    const amt=Math.round(amount);
+    if(!isValidDate(date) || !Number.isFinite(amt) || amt<=0) return "invalid";
+    // 同じ日付・同じ金額の記録が既にあれば、カード連携メールとの二重計上を避けて追加しない
+    if(ko.entries.some(e=> e && e.date===date && Math.round(e.amount)===amt)) return "dup";
+    ko.entries.push({ id:uid(), date, amount:amt, memo:String(memo||"").slice(0,100), ts:Date.now() });
+    localStorage.setItem(KAKEIBO_KEY, JSON.stringify(ko));
+    return "added";
+  }catch(e){ return "error"; }
+}
+function confirmReceiptSheet(rc){
+  const today=todayStr();
+  const date=(rc.date && rc.date<=today) ? rc.date : today;
+  const items=rc.items.slice(0,30);
+  let html='<h2>レシートの読み取り結果</h2>'+
+    '<p class="note">内容を確認・修正して記録してください。食材は<b>在庫</b>に、合計金額は<b>食費家計簿</b>に記録されます。（賞味期限は各食材の📷であとから追加できます）</p>'+
+    '<label class="field">店名<input id="rStore" type="text" maxlength="40" value="'+esc(rc.store||"")+'"></label>'+
+    '<label class="field">日付<input id="rDate" type="date" max="'+esc(today)+'" value="'+esc(date)+'"></label>'+
+    '<label class="field">合計金額（円）<input id="rTotal" type="number" inputmode="numeric" min="0" step="1" value="'+(rc.total||"")+'"></label>';
+  if(items.length){
+    html+='<div class="section-title">在庫に追加する食材（チェックしたもの）</div>'+
+      '<div class="card" style="padding:4px 12px">'+
+      items.map((n,i)=>'<label class="rc-item"><input type="checkbox" class="rcChk" data-i="'+i+'" checked><span>'+esc(n)+'</span></label>').join("")+
+      '</div>';
+  }else{
+    html+='<p class="note" style="margin-top:10px">食材は読み取れませんでした（合計金額のみ記録できます）。</p>';
+  }
+  html+='<button class="btn" id="rOk">在庫と家計簿に記録</button>'+
+    '<button class="btn secondary" id="rRetry">📷 撮り直す</button>'+
+    '<button class="btn secondary" id="rCancel">キャンセル</button>';
+  openSheet(html);
+  el("rOk").onclick=()=>{
+    const store=el("rStore").value.trim().slice(0,40);
+    const dv=el("rDate").value;
+    if(dv && !isValidDate(dv)){ toast("日付が正しくありません"); return; }
+    const d=(dv && dv<=todayStr()) ? dv : todayStr();
+    const total=Math.round(Number(el("rTotal").value));
+    const hasMoney=Number.isFinite(total) && total>0;
+    const chosen=[...document.querySelectorAll(".rcChk")].filter(c=>c.checked)
+      .map(c=>items[Number(c.dataset.i)]).filter(Boolean);
+    if(!chosen.length && !hasMoney){ toast("記録する食材か金額がありません"); return; }
+    // 1) 在庫に追加（保存失敗時は巻き戻す）
+    const before=state.items.length;
+    const added=addItemsBulk(chosen);
+    if(added && !save()){ state.items.length=before; toast("保存できませんでした（端末の空き容量をご確認ください）"); return; }
+    // 2) 食費家計簿に合計を記録（同額同日は重複回避）
+    let money=false, dupMoney=false;
+    if(hasMoney){
+      const memo=(store?store+"：":"")+(chosen.length?chosen.slice(0,5).join("、")+(chosen.length>5?" ほか":""):"レシート");
+      const st=addKakeiboExpense(d, total, memo);
+      money = st==="added";
+      dupMoney = st==="dup";
+    }
+    closeSheet();
+    if(added) schedulePantrySync();
+    render();
+    const parts=[];
+    if(added) parts.push("在庫に"+added+"件");
+    if(money) parts.push("家計簿に"+total.toLocaleString()+"円");
+    let msg = parts.length ? parts.join("／")+"を記録しました" : "";
+    if(dupMoney) msg += (msg?"（":"")+"家計簿は同額の記録があり重複回避"+(msg?"）":"");
+    if(hasMoney && !money && !dupMoney) msg += (msg?"（":"")+"家計簿への記録に失敗"+(msg?"）":"");
+    if(!msg) msg = "記録できませんでした";
+    toast(msg);
+  };
+  el("rRetry").onclick=()=>{ closeSheet(); startPhoto({ mode:"receipt" }); };
+  el("rCancel").onclick=closeSheet;
 }
 
 /* ---------- server API (Apps Script, fetch POST) ---------- */
@@ -886,6 +1009,8 @@ document.addEventListener("click", e=>{
   if(!b) return;
   const a=b.dataset.action;
   if(a==="photoAdd") startPhoto({ mode:"add" });
+  else if(a==="receiptAdd") startPhoto({ mode:"receipt" });
+  else if(a==="scanExp") startPhoto({ mode:"update", id:b.dataset.id });
   else if(a==="manualAdd") manualAddSheet();
   else if(a==="out") markOut(b.dataset.id);
   else if(a==="bought") restockSheet(b.dataset.id);

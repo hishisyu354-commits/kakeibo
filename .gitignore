@@ -1,0 +1,6 @@
+# clasp / Apps Script 自動デプロイ用（認証情報は絶対にコミットしない）
+.clasprc.json
+.clasp.json
+node_modules/
+*.log
+.DS_Store

@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#2f6b3a">
+<title>食材ストッカー</title>
+<style>
+:root{
+  --bg:#f3f5f2; --card:#ffffff; --ink:#20241f; --sub:#6b7268; --line:#e2e6df;
+  --green:#2f6b3a; --green-soft:#e7f2e9;
+  --red:#c62828; --red-soft:#fdeaea;
+}
+*{ margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html,body{ height:100%; }
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+  background:var(--bg); color:var(--ink); font-size:16px;
+  padding-bottom:calc(64px + env(safe-area-inset-bottom));
+}
+header{
+  background:var(--green); color:#fff;
+  padding:calc(14px + env(safe-area-inset-top)) 18px 12px;
+  display:flex; justify-content:space-between; align-items:baseline;
+}
+header h1{ font-size:18px; font-weight:700; }
+header .hd-date{ font-size:12.5px; opacity:.85; }
+main{ max-width:560px; margin:0 auto; padding:14px 14px 10px; }
+.section-title{ font-size:13px; font-weight:700; color:var(--sub); margin:16px 4px 8px; }
+.card{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:12px; }
+.note{ font-size:12.5px; color:var(--sub); line-height:1.65; }
+.note b{ color:var(--ink); }
+
+/* buttons */
+.btn{
+  display:block; width:100%; border:none; border-radius:12px;
+  background:var(--green); color:#fff; font-size:15.5px; font-weight:700;
+  padding:13px 14px; margin-top:10px; cursor:pointer;
+}
+.btn.secondary{ background:#eef1ec; color:var(--ink); }
+.btn.danger{ background:var(--red); }
+.btn:disabled{ opacity:.55; }
+.btn-row{ display:flex; gap:10px; }
+.btn-row .btn{ flex:1; }
+
+/* alert banner */
+.banner{
+  background:var(--red-soft); border:1px solid #f3c9c9; color:#8e1f1f;
+  border-radius:12px; padding:10px 12px; font-size:13.5px; font-weight:600;
+  margin-bottom:12px; line-height:1.5;
+}
+.banner.ok{ background:var(--green-soft); border-color:#cfe4d3; color:#295c33; }
+
+/* item rows */
+.item{
+  display:flex; align-items:center; gap:10px;
+  background:var(--card); border:1px solid var(--line); border-radius:12px;
+  padding:11px 12px; margin-bottom:8px;
+}
+.item .body{ flex:1; min-width:0; cursor:pointer; }
+.item .name{ font-size:15.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.item .sub{ font-size:12px; color:var(--sub); margin-top:2px; }
+.chip{
+  display:inline-block; font-size:12px; font-weight:700;
+  border-radius:999px; padding:3px 10px; white-space:nowrap;
+}
+.chip.c-over{ background:#8e1f1f; color:#fff; }
+.chip.c-red{ background:var(--red-soft); color:#a12121; border:1px solid #f0bcbc; }
+.chip.c-orange{ background:#fdf1e2; color:#a05a00; border:1px solid #f2d9b0; }
+.chip.c-yellow{ background:#fbf7dd; color:#7a6a00; border:1px solid #e8e0a8; }
+.chip.c-gray{ background:#eef1ec; color:var(--sub); }
+.item .act{
+  flex-shrink:0; border:1px solid var(--line); background:#fafbf9; color:var(--ink);
+  border-radius:10px; font-size:12.5px; font-weight:700; padding:9px 11px; cursor:pointer;
+}
+.item .act.buy{ background:var(--green); border-color:var(--green); color:#fff; }
+.empty{ text-align:center; color:var(--sub); font-size:13.5px; padding:26px 8px; line-height:1.7; }
+
+/* recipes */
+.recipe{ border-top:1px solid var(--line); padding:11px 2px; }
+.recipe:first-of-type{ border-top:none; }
+.recipe .r-name{ font-size:15.5px; font-weight:700; }
+.recipe .r-uses{ font-size:12.5px; color:var(--sub); margin-top:3px; }
+.recipe .r-buy{ font-size:12.5px; margin-top:3px; color:#a05a00; font-weight:600; }
+.recipe .r-how{ font-size:13px; margin-top:5px; line-height:1.6; }
+
+/* form fields */
+.field{ display:block; font-size:13px; font-weight:600; color:var(--sub); margin-top:12px; }
+.field input,.field select{
+  display:block; width:100%; margin-top:5px; font-size:16px; color:var(--ink);
+  border:1px solid var(--line); border-radius:10px; padding:11px 12px; background:#fff;
+  -webkit-appearance:none; appearance:none;
+}
+.field input:focus,.field select:focus{ outline:2px solid var(--green); border-color:var(--green); }
+
+/* modal */
+.overlay{
+  position:fixed; inset:0; background:rgba(20,24,18,.45); z-index:100;
+  display:flex; align-items:flex-end; justify-content:center;
+}
+.sheet{
+  background:#fff; width:100%; max-width:560px;
+  border-radius:18px 18px 0 0; padding:18px 16px calc(18px + env(safe-area-inset-bottom));
+  max-height:86vh; overflow-y:auto;
+}
+.sheet h2{ font-size:16px; font-weight:700; margin-bottom:4px; }
+.sheet .note{ margin-top:4px; }
+
+/* tabbar */
+nav.tabbar{
+  position:fixed; left:0; right:0; bottom:0; z-index:50;
+  display:flex; background:#fff; border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+nav.tabbar button{
+  position:relative; flex:1; border:none; background:none; cursor:pointer;
+  font-size:11.5px; color:var(--sub); padding:8px 0 9px; font-weight:600;
+}
+nav.tabbar button .ico{ display:block; font-size:19px; margin-bottom:1px; }
+nav.tabbar button.active{ color:var(--green); }
+.badge{
+  position:absolute; top:3px; left:calc(50% + 8px);
+  min-width:17px; height:17px; border-radius:999px; padding:0 4px;
+  background:var(--red); color:#fff; font-size:11px; font-weight:700;
+  display:flex; align-items:center; justify-content:center;
+}
+.badge.gray{ background:#9aa196; }
+
+/* toast */
+#toast{
+  position:fixed; left:50%; bottom:calc(78px + env(safe-area-inset-bottom));
+  transform:translateX(-50%) translateY(16px);
+  background:#252a23; color:#fff; font-size:13.5px; border-radius:10px;
+  padding:10px 16px; opacity:0; pointer-events:none; transition:.18s; z-index:200;
+  display:flex; gap:14px; align-items:center; max-width:88vw;
+}
+#toast.show{ opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
+#toast button{ background:none; border:none; color:#8fd19a; font-weight:700; font-size:13.5px; cursor:pointer; }
+
+.spinner{ display:inline-block; width:15px; height:15px; border:2px solid rgba(255,255,255,.4); border-top-color:#fff; border-radius:50%; animation:spin .8s linear infinite; vertical-align:-2px; margin-right:7px; }
+.spinner.dark{ border-color:rgba(0,0,0,.15); border-top-color:var(--sub); }
+@keyframes spin{ to{ transform:rotate(360deg); } }
+.foot{ text-align:center; font-size:11.5px; color:var(--sub); padding:14px 0 6px; }
+a{ color:var(--green); }
+</style>
+</head>
+<body>
+<header>
+  <h1>食材ストッカー</h1>
+  <div class="hd-date" id="headerDate"></div>
+</header>
+
+<main>
+  <section id="tab-stock"></section>
+  <section id="tab-shop" hidden></section>
+  <section id="tab-cook" hidden></section>
+  <section id="tab-settings" hidden></section>
+</main>
+
+<nav class="tabbar">
+  <button data-tab="stock" class="active"><span class="ico">🧺</span>在庫<span class="badge" id="badgeStock" hidden></span></button>
+  <button data-tab="shop"><span class="ico">🛒</span>買い物<span class="badge gray" id="badgeShop" hidden></span></button>
+  <button data-tab="cook"><span class="ico">🍳</span>料理</button>
+  <button data-tab="settings"><span class="ico">⚙️</span>設定</button>
+</nav>
+
+<div id="toast"></div>
+<input type="file" id="photoFile" accept="image/*" capture="environment" hidden>
+<input type="file" id="importFile" accept=".json,application/json" hidden>
+
+<script>
+"use strict";
+const KEY = "pantry.v1";
+const el = id => document.getElementById(id);
+let currentTab = "stock";
+
+/* ---------- persistence ---------- */
+function uid(){ try{ return crypto.randomUUID(); }catch(e){ return String(Date.now())+"-"+Math.random().toString(16).slice(2); } }
+function isApiUrl(u){ try{ const p=new URL(u); return p.protocol==="https:" && p.hostname==="script.google.com"; }catch(e){ return false; } }
+function load(){
+  try{ const raw=localStorage.getItem(KEY); if(raw) return sanitize(JSON.parse(raw)); }catch(e){}
+  return { items:[], apiUrl:"", notifyDays:3, lastRecipes:null };
+}
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(state)); return true; }
+  catch(e){ toast("保存できませんでした（端末の空き容量をご確認ください）"); return false; }
+}
+function sanitize(o){
+  // バックアップとして解釈できないものは例外（誤ファイルでデータを消さないため）
+  if(!o || typeof o!=="object" || Array.isArray(o) || !Array.isArray(o.items)) throw new Error("not a valid backup");
+  const out = { items:[], apiUrl:"", notifyDays:3, lastRecipes:null };
+  // apiUrl はデータを外部送信する先なので、自分のApps Script(https+script.google.com)以外は破棄
+  if(typeof o.apiUrl==="string" && o.apiUrl.length<=2000 && isApiUrl(o.apiUrl)) out.apiUrl=o.apiUrl;
+  if(typeof o.notifyDays==="number" && isFinite(o.notifyDays) && o.notifyDays>=1 && o.notifyDays<=14) out.notifyDays=Math.round(o.notifyDays);
+  const seen=new Set();
+  for(const it of o.items){
+    if(!it || typeof it.name!=="string" || !it.name.trim()) continue;
+    let id=(typeof it.id==="string" && it.id && !seen.has(it.id)) ? it.id : uid();
+    while(seen.has(id)) id=uid();
+    seen.add(id);
+    out.items.push({
+      id,
+      name: it.name.trim().slice(0,40),
+      expiry: isValidDate(it.expiry) ? it.expiry : null,
+      kind: (it.kind==="消費期限"||it.kind==="賞味期限") ? it.kind : null,
+      state: it.state==="out" ? "out" : "stock",
+      addedAt: (typeof it.addedAt==="number" && isFinite(it.addedAt)) ? it.addedAt : 0,
+      outAt: (typeof it.outAt==="number" && isFinite(it.outAt)) ? it.outAt : 0
+    });
+    if(out.items.length>=500) break;   // 上限（localStorage保護）
+  }
+  out.lastRecipes = sanitizeRecipes(o.lastRecipes);
+  return out;
+}
+function sanitizeRecipes(r){
+  if(!r || typeof r!=="object" || Array.isArray(r)) return null;
+  const str=(s,n)=> typeof s==="string" ? s.slice(0,n) : "";
+  const arr=(a,n)=> Array.isArray(a) ? a.filter(x=>typeof x==="string").map(x=>x.slice(0,30)).slice(0,n) : [];
+  const rec=(x,withBuy)=>({ name:str(x&&x.name,40), uses:arr(x&&x.uses,10), buy:withBuy?arr(x&&x.buy,6):[], how:str(x&&x.how,300) });
+  const out={
+    at:(typeof r.at==="number" && isFinite(r.at)) ? r.at : 0,
+    canMake:Array.isArray(r.canMake) ? r.canMake.slice(0,6).map(x=>rec(x,false)).filter(x=>x.name) : [],
+    buyMore:Array.isArray(r.buyMore) ? r.buyMore.slice(0,6).map(x=>rec(x,true)).filter(x=>x.name) : []
+  };
+  return (out.canMake.length||out.buyMore.length) ? out : null;
+}
+let state = load();
+let stateGen = 0;   // リセット/インポートで増える世代番号。古いundoクロージャの誤発火を防ぐ
+
+/* ---------- date helpers ---------- */
+function pad(n){ return String(n).padStart(2,"0"); }
+function fmt(dt){ return dt.getFullYear()+"-"+pad(dt.getMonth()+1)+"-"+pad(dt.getDate()); }
+function todayStr(){ return fmt(new Date()); }
+function parseD(s){ const p=s.split("-"); return new Date(+p[0],+p[1]-1,+p[2]); }
+function isValidDate(s){
+  if(typeof s!=="string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const p=s.split("-").map(Number);
+  const dt=new Date(p[0],p[1]-1,p[2]);
+  return dt.getFullYear()===p[0] && dt.getMonth()===p[1]-1 && dt.getDate()===p[2];
+}
+function daysLeft(expiry){
+  if(!expiry) return null;
+  return Math.round((parseD(expiry)-parseD(todayStr()))/86400000);
+}
+function fmtMD(s){ const p=s.split("-"); return (+p[1])+"/"+(+p[2]); }
+const WD="日月火水木金土";
+function niceDate(s){ const p=s.split("-"); return (+p[0])+"年"+(+p[1])+"月"+(+p[2])+"日("+WD[parseD(s).getDay()]+")"; }
+
+/* ---------- formatting ---------- */
+function esc(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function chip(it){
+  const d=daysLeft(it.expiry);
+  const kind=it.kind==="消費期限" ? "消費" : "";
+  if(d===null) return '<span class="chip c-gray">期限なし</span>';
+  if(d<0)  return '<span class="chip c-over">'+(kind||"期限")+"切れ "+(-d)+"日</span>";
+  if(d===0) return '<span class="chip c-red">今日まで'+(kind?"("+kind+")":"")+"</span>";
+  if(d===1) return '<span class="chip c-red">明日まで</span>';
+  if(d<=3) return '<span class="chip c-orange">あと'+d+"日</span>";
+  if(d<=7) return '<span class="chip c-yellow">あと'+d+"日</span>";
+  return '<span class="chip c-gray">'+fmtMD(it.expiry)+" まで</span>";
+}
+let toastTimer;
+function toast(t, action){
+  const n=el("toast");
+  n.textContent="";
+  n.appendChild(document.createTextNode(t));
+  if(action){
+    const b=document.createElement("button");
+    b.textContent=action.label;
+    b.onclick=()=>{ n.classList.remove("show"); clearTimeout(toastTimer); action.fn(); };
+    n.appendChild(b);
+  }
+  n.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>n.classList.remove("show"), action?4500:2000);
+}
+
+/* ---------- rendering ---------- */
+function stockItems(){ return state.items.filter(i=>i.state==="stock"); }
+function outItems(){ return state.items.filter(i=>i.state==="out"); }
+function alertItems(){ return stockItems().filter(i=>{ const d=daysLeft(i.expiry); return d!==null && d<=state.notifyDays; }); }
+
+function sortStock(list){
+  return [...list].sort((a,b)=>{
+    const da=daysLeft(a.expiry), db=daysLeft(b.expiry);
+    if(da===null && db===null) return (b.addedAt||0)-(a.addedAt||0);
+    if(da===null) return 1;
+    if(db===null) return -1;
+    return da-db;
+  });
+}
+
+function itemRow(it, mode){
+  const btn = mode==="stock"
+    ? '<button class="act" data-action="out" data-id="'+esc(it.id)+'">切らした</button>'
+    : '<button class="act buy" data-action="bought" data-id="'+esc(it.id)+'">買った</button>';
+  const sub = mode==="stock"
+    ? (it.expiry ? esc((it.kind||"賞味期限")+" "+it.expiry.replace(/-/g,"/")) : "期限未登録")
+    : "品切れ中";
+  return '<div class="item">'+
+      '<div class="body" data-action="edit" data-id="'+esc(it.id)+'">'+
+        '<div class="name">'+esc(it.name)+'</div>'+
+        '<div class="sub">'+sub+'</div>'+
+      '</div>'+
+      (mode==="stock" ? chip(it) : "")+
+      btn+
+    '</div>';
+}
+
+function renderStock(){
+  const list=sortStock(stockItems());
+  const warn=alertItems();
+  const over=warn.filter(i=>daysLeft(i.expiry)<0).length;
+  let html="";
+  if(warn.length){
+    html+='<div class="banner">⚠️ 期限が近い食材が '+warn.length+' 件'+(over?"（うち期限切れ "+over+" 件）":"")+'あります</div>';
+  }
+  html+='<div class="btn-row">'+
+    '<button class="btn" data-action="photoAdd">📷 写真で追加</button>'+
+    '<button class="btn secondary" data-action="manualAdd">＋ 手入力</button>'+
+  '</div>';
+  html+='<div class="section-title">在庫（'+list.length+'）</div>';
+  html+= list.length
+    ? list.map(it=>itemRow(it,"stock")).join("")
+    : '<div class="empty">まだ食材がありません。<br>「📷 写真で追加」でパッケージを撮ると、名前と賞味期限が自動で入ります。</div>';
+  html+='<p class="note" style="margin:6px 4px 0">食材が無くなったら「切らした」をワンタップ → 買い物リストへ移ります。行をタップすると編集できます。</p>';
+  el("tab-stock").innerHTML=html;
+}
+
+function renderShop(){
+  const list=[...outItems()].sort((a,b)=>(b.outAt||0)-(a.outAt||0));
+  let html='<div class="section-title">買うものリスト（'+list.length+'）</div>';
+  html+= list.length
+    ? list.map(it=>itemRow(it,"shop")).join("")
+    : '<div class="empty">品切れの食材はありません。<br>在庫タブで「切らした」を押すと、ここに並びます。</div>';
+  if(list.length) html+='<p class="note" style="margin:6px 4px 0">買ったら「買った」をタップ → 新しい期限を入れて在庫に戻します。</p>';
+  el("tab-shop").innerHTML=html;
+}
+
+function renderCook(){
+  const st=stockItems();
+  let html='<div class="card"><p class="note">いまの在庫（'+st.length+'品）から、一人暮らしで作りやすい料理をAIが提案します。<b>塩・砂糖・醤油・味噌・油などの基本調味料は常備している前提</b>です。</p>'+
+    '<button class="btn" data-action="suggest" id="suggestBtn"'+(st.length?"":" disabled")+'>🍳 この在庫で提案してもらう</button>'+
+    (st.length ? "" : '<p class="note" style="margin-top:8px">在庫に食材を追加すると提案できます。</p>')+
+    (state.apiUrl ? "" : '<p class="note" style="margin-top:8px">先に「設定 → AI連携」でURLを登録してください。</p>')+
+  '</div>';
+  const r=state.lastRecipes;
+  if(r){
+    if(r.canMake.length){
+      html+='<div class="section-title">✅ 今すぐ作れる</div><div class="card">'+
+        r.canMake.map(x=>'<div class="recipe"><div class="r-name">'+esc(x.name)+'</div>'+
+          (x.uses.length?'<div class="r-uses">使う食材：'+esc(x.uses.join("、"))+'</div>':"")+
+          (x.how?'<div class="r-how">'+esc(x.how)+'</div>':"")+
+        '</div>').join("")+'</div>';
+    }
+    if(r.buyMore.length){
+      html+='<div class="section-title">🛍 あと少し買えば作れる</div><div class="card">'+
+        r.buyMore.map(x=>'<div class="recipe"><div class="r-name">'+esc(x.name)+'</div>'+
+          (x.uses.length?'<div class="r-uses">使う食材：'+esc(x.uses.join("、"))+'</div>':"")+
+          (x.buy.length?'<div class="r-buy">＋ 買い足し：'+esc(x.buy.join("、"))+'</div>':"")+
+          (x.how?'<div class="r-how">'+esc(x.how)+'</div>':"")+
+        '</div>').join("")+'</div>';
+    }
+    if(r.at) html+='<p class="note" style="margin:0 4px">提案日時：'+esc(new Date(r.at).toLocaleString("ja-JP"))+'（在庫を変えたら再提案できます）</p>';
+  }
+  el("tab-cook").innerHTML=html;
+}
+
+function renderSettings(){
+  el("tab-settings").innerHTML=
+    '<div class="section-title">AI連携（写真読み取り・料理提案・通知）</div>'+
+    '<div class="card">'+
+      '<p class="note">家計簿と同じ Google Apps Script の URL を貼ります（1つのURLを家計簿とこのアプリで共用）。写真の読み取りと料理提案は Google の <b>Gemini API 無料枠</b> を使います（設定手順は SETUP.md 参照）。</p>'+
+      '<label class="field">連携URL（Apps Script）<input id="setApiUrl" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/.../exec?token=..." value="'+esc(state.apiUrl||"")+'"></label>'+
+      '<div class="btn-row"><button class="btn" data-action="saveApi">保存</button>'+
+      '<button class="btn secondary" data-action="testApi" id="testApiBtn">接続テスト</button></div>'+
+      '<div class="note" id="apiStatus" style="margin-top:10px">'+(state.apiUrl?"URL設定済み":"未設定")+'</div>'+
+    '</div>'+
+    '<div class="section-title">期限の通知</div>'+
+    '<div class="card">'+
+      '<label class="field">何日前から「期限が近い」と扱うか'+
+        '<select id="setNotifyDays">'+[...new Set([1,2,3,4,5,7,state.notifyDays])].sort((a,b)=>a-b).map(n=>'<option value="'+n+'"'+(state.notifyDays===n?" selected":"")+'>'+n+'日前から</option>').join("")+'</select>'+
+      '</label>'+
+      '<button class="btn" data-action="saveNotify">保存</button>'+
+      '<p class="note" style="margin-top:10px">アプリ内では期限が近いと赤/オレンジ表示になります。さらに<b>毎朝のメール通知</b>（Gmailに届く＝iPhoneに通知）を使うには、Apps Script側で <b>setupNotifyTrigger</b> を1回実行してください（SETUP.md 手順4）。在庫データは変更のたびに自動で送信されます。</p>'+
+    '</div>'+
+    '<div class="section-title">バックアップ</div>'+
+    '<div class="card">'+
+      '<p class="note">データはこの端末のブラウザ内に保存されます。機種変更前などに書き出しをおすすめします（連携URLは含まれません）。</p>'+
+      '<div class="btn-row"><button class="btn" data-action="export">書き出す</button>'+
+      '<button class="btn secondary" data-action="import">読み込む</button></div>'+
+    '</div>'+
+    '<div class="card"><button class="btn danger" data-action="reset">全データを削除</button></div>'+
+    '<div class="card"><p class="note">💰 食費の記録は <a href="../">食費家計簿</a> へ</p></div>'+
+    '<div class="foot">食材ストッカー ・ v1</div>';
+}
+
+function render(){
+  el("headerDate").textContent=niceDate(todayStr());
+  ({stock:renderStock, shop:renderShop, cook:renderCook, settings:renderSettings})[currentTab]();
+  const w=alertItems().length, o=outItems().length;
+  const bs=el("badgeStock"); bs.hidden=!w; bs.textContent=w;
+  const bo=el("badgeShop"); bo.hidden=!o; bo.textContent=o;
+}
+function show(tab){
+  currentTab=tab;
+  document.querySelectorAll("nav.tabbar button").forEach(b=>b.classList.toggle("active", b.dataset.tab===tab));
+  document.querySelectorAll("main > section").forEach(s=>s.hidden=(s.id!=="tab-"+tab));
+  render();
+}
+
+/* ---------- modal ---------- */
+function openSheet(html){
+  closeSheet();
+  const ov=document.createElement("div");
+  ov.className="overlay"; ov.id="sheet";
+  ov.innerHTML='<div class="sheet">'+html+'</div>';
+  ov.addEventListener("click", e=>{ if(e.target===ov) closeSheet(); });
+  document.body.appendChild(ov);
+  return ov;
+}
+function closeSheet(){ const s=el("sheet"); if(s) s.remove(); }
+
+/* ---------- item actions ---------- */
+function addItem(name, expiry, kind){
+  if(state.items.length>=500){ toast("食材が上限（500件）に達しています。使わないものを削除してください"); return false; }
+  const it={ id:uid(), name:name.trim().slice(0,40), expiry:isValidDate(expiry)?expiry:null, kind:kind||null, state:"stock", addedAt:Date.now(), outAt:0 };
+  if(!it.name){ toast("名前を入れてください"); return false; }
+  state.items.push(it);
+  if(!save()){ state.items.pop(); return false; }
+  schedulePantrySync(); render();
+  return true;
+}
+function markOut(id){
+  const it=state.items.find(i=>i.id===id); if(!it) return;
+  it.state="out"; it.outAt=Date.now();
+  if(!save()){ it.state="stock"; it.outAt=0; return; }
+  schedulePantrySync(); render();
+  const gen=stateGen, outAt=it.outAt;
+  toast("「"+it.name+"」を買い物リストへ", { label:"元に戻す", fn:()=>{
+    if(gen!==stateGen) return;   // リセット/インポート後は無効
+    it.state="stock"; it.outAt=0;
+    if(save()){ schedulePantrySync(); render(); }
+    else { it.state="out"; it.outAt=outAt; render(); }
+  }});
+}
+function restock(id, expiry, kind){
+  const it=state.items.find(i=>i.id===id); if(!it) return;
+  const prev={state:it.state, expiry:it.expiry, kind:it.kind};
+  it.state="stock"; it.expiry=isValidDate(expiry)?expiry:null;
+  it.kind=kind||null;   // 新しい期限に古い種別（賞味/消費）を引きずらない
+  it.addedAt=Date.now();
+  if(!save()){ Object.assign(it, prev); return; }
+  schedulePantrySync(); render();
+  toast("「"+it.name+"」を在庫に戻しました");
+}
+function deleteItem(id){
+  const idx=state.items.findIndex(i=>i.id===id); if(idx<0) return;
+  const removed=state.items[idx];
+  state.items.splice(idx,1);
+  if(!save()){ state.items.splice(idx,0,removed); return; }
+  schedulePantrySync(); render();
+  const gen=stateGen;
+  toast("削除しました", { label:"元に戻す", fn:()=>{
+    if(gen!==stateGen) return;   // リセット/インポート後は無効
+    if(state.items.length>=500){ toast("上限（500件）のため戻せませんでした"); return; }
+    state.items.push(removed);
+    if(save()){ schedulePantrySync(); render(); }
+    else { state.items.pop(); render(); }
+  }});
+}
+
+/* ---------- sheets (add / edit / restock / confirm) ---------- */
+function manualAddSheet(){
+  openSheet(
+    '<h2>食材を追加</h2>'+
+    '<label class="field">名前（例：牛乳、食パン、豚こま）<input id="fName" type="text" maxlength="40" autocomplete="off"></label>'+
+    '<label class="field">期限（わかれば）<input id="fExp" type="date"></label>'+
+    '<button class="btn" id="fAdd">追加する</button>'+
+    '<button class="btn secondary" id="fCancel">キャンセル</button>'
+  );
+  el("fName").focus();
+  el("fAdd").onclick=()=>{
+    const exp=el("fExp").value||null;
+    if(exp && !isValidDate(exp)){ toast("日付が正しくありません"); return; }
+    if(addItem(el("fName").value, exp, null)){ closeSheet(); toast("追加しました"); }
+  };
+  el("fCancel").onclick=closeSheet;
+}
+function editSheet(id){
+  const it=state.items.find(i=>i.id===id); if(!it) return;
+  openSheet(
+    '<h2>編集</h2>'+
+    '<label class="field">名前<input id="fName" type="text" maxlength="40" value="'+esc(it.name)+'"></label>'+
+    '<label class="field">期限<input id="fExp" type="date" value="'+(it.expiry||"")+'"></label>'+
+    '<button class="btn" id="fSave">保存</button>'+
+    '<button class="btn secondary" id="fPhoto">📷 写真で期限を読み直す</button>'+
+    '<button class="btn danger" id="fDel">この食材を削除</button>'+
+    '<button class="btn secondary" id="fCancel">キャンセル</button>'
+  );
+  el("fSave").onclick=()=>{
+    const name=el("fName").value.trim().slice(0,40);
+    if(!name){ toast("名前を入れてください"); return; }
+    const exp=el("fExp").value||null;
+    if(exp && !isValidDate(exp)){ toast("日付が正しくありません"); return; }
+    const prev={name:it.name, expiry:it.expiry, kind:it.kind};
+    it.name=name;
+    if(exp!==it.expiry){ it.expiry=exp; it.kind=null; }   // 期限を変えたら旧種別を引きずらない
+    if(!save()){ Object.assign(it,prev); return; }
+    schedulePantrySync(); closeSheet(); render(); toast("保存しました");
+  };
+  el("fPhoto").onclick=()=>{ closeSheet(); startPhoto({ mode:"update", id:it.id }); };
+  el("fDel").onclick=()=>{ closeSheet(); deleteItem(it.id); };
+  el("fCancel").onclick=closeSheet;
+}
+function restockSheet(id){
+  const it=state.items.find(i=>i.id===id); if(!it) return;
+  openSheet(
+    '<h2>「'+esc(it.name)+'」を在庫に戻す</h2>'+
+    '<p class="note">新しい期限を入れてください。パッケージを撮れば自動で読み取ります。</p>'+
+    '<button class="btn" id="fPhoto">📷 写真で期限を読み取る</button>'+
+    '<label class="field">期限を手入力<input id="fExp" type="date"></label>'+
+    '<button class="btn" id="fOk">この期限で在庫に戻す</button>'+
+    '<button class="btn secondary" id="fSkip">期限なしで戻す</button>'+
+    '<button class="btn secondary" id="fCancel">キャンセル</button>'
+  );
+  el("fPhoto").onclick=()=>{ closeSheet(); startPhoto({ mode:"restock", id:it.id }); };
+  el("fOk").onclick=()=>{
+    const exp=el("fExp").value;
+    if(!isValidDate(exp)){ toast("日付を入れてください"); return; }
+    closeSheet(); restock(id, exp, null);
+  };
+  el("fSkip").onclick=()=>{ closeSheet(); restock(id, null, null); };
+  el("fCancel").onclick=closeSheet;
+}
+function confirmAiSheet(ctx, ai){
+  const isAdd = ctx.mode==="add";
+  const title = isAdd ? "この内容で追加しますか？" : "読み取り結果";
+  openSheet(
+    '<h2>'+title+'</h2>'+
+    '<p class="note">読み取り結果は編集できます。'+(ai.kind?"（"+esc(ai.kind)+"として読み取り）":"日付が読み取れない場合は手入力してください。")+'</p>'+
+    (isAdd?'<label class="field">名前<input id="fName" type="text" maxlength="40" value="'+esc(ai.name||"")+'"></label>':"")+
+    '<label class="field">期限<input id="fExp" type="date" value="'+(ai.expiry||"")+'"></label>'+
+    '<button class="btn" id="fOk">'+(isAdd?"追加する":"この期限にする")+'</button>'+
+    '<button class="btn secondary" id="fRetry">📷 撮り直す</button>'+
+    '<button class="btn secondary" id="fCancel">キャンセル</button>'
+  );
+  el("fOk").onclick=()=>{
+    const exp=el("fExp").value||null;
+    if(exp && !isValidDate(exp)){ toast("日付が正しくありません"); return; }
+    if(ctx.mode==="add"){
+      if(addItem(el("fName").value, exp, ai.kind||null)){ closeSheet(); toast("追加しました"); }
+    }else if(ctx.mode==="restock"){
+      closeSheet(); restock(ctx.id, exp, ai.kind||null);
+    }else{ // update
+      const it=state.items.find(i=>i.id===ctx.id);
+      if(it){
+        const prev={expiry:it.expiry, kind:it.kind};
+        it.expiry=exp; it.kind=ai.kind||null;
+        if(save()){ schedulePantrySync(); render(); toast("期限を更新しました"); }
+        else Object.assign(it, prev);   // 保存失敗時は巻き戻す
+      }
+      closeSheet();
+    }
+  };
+  el("fRetry").onclick=()=>{ closeSheet(); startPhoto(ctx); };
+  el("fCancel").onclick=closeSheet;
+}
+
+/* ---------- photo → AI ---------- */
+let photoCtx=null;
+function startPhoto(ctx){
+  if(!state.apiUrl){ toast("先に設定タブでAI連携URLを登録してください"); show("settings"); return; }
+  photoCtx=ctx;
+  el("photoFile").click();
+}
+el("photoFile").addEventListener("change", async e=>{
+  const f=e.target.files && e.target.files[0];
+  e.target.value="";
+  const ctx=photoCtx; photoCtx=null;
+  if(!f || !ctx) return;
+  const ov=openSheet('<h2><span class="spinner dark"></span>写真を読み取り中…</h2><p class="note">賞味期限と食材名をAIが読み取っています（数秒〜十数秒）。</p>');
+  try{
+    const b64=await fileToJpeg(f, 1280);
+    const res=await api({ action:"ai", image:b64, mime:"image/jpeg", today:todayStr() }, 90000);
+    const ai=res.item||{};
+    const item={
+      name: (typeof ai.name==="string" ? ai.name.trim().slice(0,40) : ""),
+      expiry: isValidDate(ai.expiry) ? ai.expiry : null,
+      kind: (ai.kind==="消費期限"||ai.kind==="賞味期限") ? ai.kind : null
+    };
+    if(!item.name && !item.expiry) throw new Error("写真から読み取れませんでした。明るい場所で期限の印字を大きく撮ってみてください");
+    confirmAiSheet(ctx, item);
+  }catch(err){
+    closeSheet();
+    toast(shortErr(err));
+    if(ctx.mode==="add") manualAddSheet();
+    else if(ctx.mode==="restock") restockSheet(ctx.id);
+  }
+});
+function shortErr(err){
+  const m=String((err && err.message) || err || "エラー");
+  if(/abort/i.test(m)) return "時間切れです。電波の良い場所でもう一度お試しください";
+  return m.slice(0,120);
+}
+function fileToJpeg(file, maxDim){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        let w=img.naturalWidth, h=img.naturalHeight;
+        if(!w || !h) throw new Error("画像を読み込めませんでした");
+        const sc=Math.min(1, maxDim/Math.max(w,h));
+        w=Math.max(1,Math.round(w*sc)); h=Math.max(1,Math.round(h*sc));
+        const c=document.createElement("canvas"); c.width=w; c.height=h;
+        c.getContext("2d").drawImage(img,0,0,w,h);
+        const dataUrl=c.toDataURL("image/jpeg",0.85);
+        URL.revokeObjectURL(url);
+        resolve(dataUrl.slice(dataUrl.indexOf(",")+1));
+      }catch(e){ URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error("この画像形式は読み込めませんでした")); };
+    img.src=url;
+  });
+}
+
+/* ---------- server API (Apps Script, fetch POST) ---------- */
+async function api(body, timeoutMs){
+  const url=(state.apiUrl||"").trim();
+  if(!url) throw new Error("連携URLが未設定です（設定タブで登録）");
+  const ctrl=new AbortController();
+  const t=setTimeout(()=>ctrl.abort(), timeoutMs||60000);
+  try{
+    const res=await fetch(url, {
+      method:"POST",
+      headers:{ "Content-Type":"text/plain;charset=utf-8" },   // preflight回避（Apps ScriptはOPTIONS非対応）
+      body:JSON.stringify(body),
+      signal:ctrl.signal
+    });
+    let data=null;
+    try{ data=await res.json(); }catch(e){ throw new Error("サーバー応答を解釈できません（URLとデプロイ設定をご確認ください）"); }
+    if(!data || data.ok!==true) throw new Error((data && data.error) ? String(data.error).slice(0,100) : "サーバーエラー");
+    return data;
+  }finally{ clearTimeout(t); }
+}
+
+/* ---------- recipes ---------- */
+async function suggest(){
+  const btn=el("suggestBtn");
+  if(btn){ btn.disabled=true; btn.innerHTML='<span class="spinner"></span>提案を考え中…（数秒〜十数秒）'; }
+  try{
+    const names=stockItems().map(i=>{
+      const d=daysLeft(i.expiry);
+      return i.name + (d!==null && d<=state.notifyDays ? "(期限間近)" : "");
+    }).slice(0,60);
+    const res=await api({ action:"recipes", items:names }, 90000);
+    const r=sanitizeRecipes(Object.assign({}, res.recipes, { at:Date.now() }));
+    if(!r) throw new Error("提案を作れませんでした。もう一度お試しください");
+    state.lastRecipes=r;
+    save();
+    render();
+    toast("提案を更新しました");
+  }catch(err){
+    toast(shortErr(err));
+    render();
+  }
+}
+
+/* ---------- pantry sync (メール通知用の在庫スナップショット送信) ---------- */
+let pantryTimer=null;
+function schedulePantrySync(){
+  if(!state.apiUrl) return;
+  clearTimeout(pantryTimer);
+  pantryTimer=setTimeout(sendPantry, 4000);   // 連続操作をまとめて送る
+}
+async function sendPantry(){
+  try{ await api(pantryPayload(), 30000); }
+  catch(e){ /* 通知用の送信失敗は致命的でないため黙って次回に任せる */ }
+}
+function pantryPayload(){
+  // 通知に使うのは「在庫かつ期限あり」だけ。絞って送ることでサーバー側の保存上限(9KB)にも収まる
+  return {
+    action:"pantry",
+    notifyDays: state.notifyDays,
+    items: state.items.filter(it=>it.state==="stock" && it.expiry)
+                      .map(it=>({ name:it.name, expiry:it.expiry, state:"stock" }))
+  };
+}
+
+/* ---------- settings actions ---------- */
+async function saveApi(){
+  const u=el("setApiUrl").value.trim();
+  if(u && !isApiUrl(u)){ toast("Apps ScriptのURL（https://script.google.com/…）を入れてください"); return; }
+  const prev=state.apiUrl;
+  if(!u && prev){
+    // 連携解除の前にサーバー側の通知用スナップショットを空にする（残ると古い期限メールが届き続けるため）
+    clearTimeout(pantryTimer);
+    try{ await api({ action:"pantry", notifyDays:state.notifyDays, items:[] }, 20000); }catch(e){}
+  }
+  state.apiUrl=u;
+  if(!save()){ state.apiUrl=prev; return; }
+  toast(u ? "保存しました" : "連携URLを消去しました");
+  renderSettings();
+  if(u) schedulePantrySync();
+}
+async function testApi(){
+  const btn=el("testApiBtn"), st=el("apiStatus");
+  if(!state.apiUrl){ toast("先にURLを保存してください"); return; }
+  btn.disabled=true; st.textContent="接続中…";
+  try{
+    const res=await api({ action:"ping" }, 30000);
+    st.textContent="✅ 接続OK" + (res.gemini ? "（AI読み取り・提案も利用可能）" : "（⚠️ Gemini APIキーが未設定：写真読み取りと料理提案には設定が必要です）");
+    toast("接続できました");
+  }catch(err){
+    st.textContent="❌ 接続できません：" + shortErr(err);
+  }finally{ btn.disabled=false; }
+}
+function saveNotify(){
+  const n=Math.round(Number(el("setNotifyDays").value));
+  if(!(n>=1 && n<=14)){ toast("日数が正しくありません"); return; }
+  state.notifyDays=n;
+  if(save()){ toast("保存しました"); schedulePantrySync(); render(); }
+}
+function exportData(){
+  try{
+    const data=Object.assign({}, state);
+    delete data.apiUrl;   // token入りURLはバックアップに含めない
+    const blob=new Blob([JSON.stringify(data,null,2)], { type:"application/json" });
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url; a.download="pantry-backup-"+todayStr()+".json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    toast("バックアップを書き出しました");
+  }catch(e){ toast("書き出しに失敗しました"); }
+}
+async function resetData(){
+  if(!confirm("本当に全データを削除しますか？この操作は元に戻せません。\n（AI連携のURL設定も解除されます）")) return;
+  if(state.apiUrl){
+    // サーバー側の通知用スナップショットも空にする（残ると削除済み食材の期限メールが毎朝届き続けるため）
+    clearTimeout(pantryTimer);
+    let wiped=false;
+    try{ await api({ action:"pantry", notifyDays:state.notifyDays, items:[] }, 20000); wiped=true; }catch(e){}
+    if(!wiped && !confirm("サーバー側の通知用データを消去できませんでした（オフライン？）。\nこのまま削除すると、削除済み食材の期限メールが届き続けることがあります。続行しますか？")) return;
+  }
+  stateGen++;
+  state={ items:[], apiUrl:"", notifyDays:3, lastRecipes:null };
+  save(); render(); toast("削除しました");
+}
+el("importFile").addEventListener("change", e=>{
+  const f=e.target.files && e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const parsed=JSON.parse(r.result);
+      const next=sanitize(parsed);
+      next.apiUrl=state.apiUrl;   // 連携URLはバックアップから採用せず必ず端末の設定を使う（悪意あるファイルでの送信先すり替えを防止）
+      if(state.items.length && !confirm("いまの食材（"+state.items.length+"件）を、読み込むデータ（"+next.items.length+"件）で置き換えます。よろしいですか？")) return;
+      const truncated=Array.isArray(parsed.items) && parsed.items.length>500;
+      const prev=state;
+      state=next;
+      if(!save()){ state=prev; return; }
+      stateGen++;
+      render(); schedulePantrySync();
+      toast("読み込みました（"+next.items.length+"件）"+(truncated?"※500件を超えた分は読み込めませんでした":""));
+    }catch(err){
+      toast("このファイルは食材ストッカーのバックアップではないようです");
+    }finally{ e.target.value=""; }
+  };
+  r.onerror=()=>{ toast("読み込みに失敗しました"); e.target.value=""; };
+  r.readAsText(f);
+});
+
+/* ---------- wiring ---------- */
+document.addEventListener("click", e=>{
+  const nav=e.target.closest("nav.tabbar button");
+  if(nav){ show(nav.dataset.tab); return; }
+  const b=e.target.closest("[data-action]");
+  if(!b) return;
+  const a=b.dataset.action;
+  if(a==="photoAdd") startPhoto({ mode:"add" });
+  else if(a==="manualAdd") manualAddSheet();
+  else if(a==="out") markOut(b.dataset.id);
+  else if(a==="bought") restockSheet(b.dataset.id);
+  else if(a==="edit") editSheet(b.dataset.id);
+  else if(a==="suggest") suggest();
+  else if(a==="saveApi") saveApi();
+  else if(a==="testApi") testApi();
+  else if(a==="saveNotify") saveNotify();
+  else if(a==="export") exportData();
+  else if(a==="import") el("importFile").click();
+  else if(a==="reset") resetData();
+});
+
+/* 日付が変わったときの表示更新（深夜をまたいで開きっぱなし等） */
+function onWake(){ if(el("sheet")) return; render(); }
+window.addEventListener("focus", onWake);
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) onWake(); });
+
+/* ---------- init ---------- */
+render();
+</script>
+</body>
+</html>

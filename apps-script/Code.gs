@@ -147,7 +147,8 @@ function doPost(e){
     } else {
       var action = String(body.action || p.action || '');
       if(action === 'ai')           out = { ok:true, item: extractFoodInfo_(body.image, body.mime, body.today) };
-      else if(action === 'recipes') out = { ok:true, recipes: suggestRecipes_(body.items) };
+      else if(action === 'recipes') out = { ok:true, recipes: suggestRecipes_(body.items, body.meal, body.genre) };
+      else if(action === 'recipe')  out = { ok:true, recipe: recipeDetail_(body.name, body.uses, body.buy) };
       else if(action === 'pantry')  out = savePantry_(body.items, body.notifyDays);
       else if(action === 'ping')    out = { ok:true, gemini: geminiConfigured_() };
       else out = { ok:false, error:'unknown action' };
@@ -213,16 +214,24 @@ function extractFoodInfo_(imageB64, mime, todayStr){
 }
 
 /** 在庫リスト → 料理提案 { canMake:[], buyMore:[] } */
-function suggestRecipes_(items){
+var COOK_MEALS_ = ['朝','昼','夜','おやつ','夜食'];
+var COOK_GENRES_ = ['和食','洋食','中華','エスニック','麺・丼','スープ','サラダ・副菜'];
+function whitelist_(v, list){ return (typeof v === 'string' && list.indexOf(v) >= 0) ? v : ''; }
+
+function suggestRecipes_(items, meal, genre){
   if(!Array.isArray(items) || !items.length) throw new Error('在庫が空です');
   var names = items.filter(function(x){ return typeof x === 'string' && x.trim(); })
                    .map(function(x){ return x.trim().slice(0, 50); }).slice(0, 60);   // 名前40字+「(期限間近)」6字を収容
   if(!names.length) throw new Error('在庫が空です');
+  var m = whitelist_(meal, COOK_MEALS_);
+  var g = whitelist_(genre, COOK_GENRES_);
   var prompt =
     'あなたは一人暮らしの自炊アシスタントです。手元にある食材は次の通りです:\n' +
     names.join('、') + '\n' +
     '塩・砂糖・醤油・味噌・油・酢・こしょう・めんつゆ等の基本調味料は常備している前提。\n' +
     '「(期限間近)」が付いた食材を優先的に使ってください。\n' +
+    (m ? '「' + m + '」に合う料理を中心に提案してください。\n' : '') +
+    (g ? 'ジャンルは「' + g + '」を中心にしてください。\n' : '') +
     '次のJSONだけを返してください:\n' +
     '{"canMake":[{"name":string,"uses":[string],"how":string}],' +
     '"buyMore":[{"name":string,"uses":[string],"buy":[string],"how":string}]}\n' +
@@ -244,6 +253,46 @@ function suggestRecipes_(items){
     }).filter(function(x){ return x.name; });
   };
   return { canMake: norm(out.canMake, false, 4), buyMore: norm(out.buyMore, true, 3) };
+}
+
+/** 1つの料理の詳しい作り方（材料・手順・コツ）を生成。料理タブでタップされたとき呼ぶ。 */
+function recipeDetail_(name, uses, buy){
+  name = (typeof name === 'string') ? name.trim().slice(0, 60) : '';
+  if(!name) throw new Error('料理名がありません');
+  var clean = function(a){
+    return Array.isArray(a) ? a.filter(function(x){ return typeof x === 'string' && x.trim(); })
+                               .map(function(x){ return x.trim().slice(0, 40); }).slice(0, 20) : [];
+  };
+  var u = clean(uses), b = clean(buy);
+  var prompt =
+    'あなたは一人暮らしの自炊アシスタントです。\n' +
+    '次の料理の、一人分の詳しい作り方を教えてください：「' + name + '」\n' +
+    (u.length ? '使う手元の食材：' + u.join('、') + '\n' : '') +
+    (b.length ? '買い足す食材：' + b.join('、') + '\n' : '') +
+    '塩・砂糖・醤油・味噌・油・酢・こしょう・めんつゆ等の基本調味料は常備している前提。\n' +
+    '次のJSONだけを返してください:\n' +
+    '{"title":string,"servings":string,"time":string,"ingredients":[{"item":string,"amount":string}],"steps":[string],"tips":string}\n' +
+    '- ingredients: 分量つきの材料（一人分・最大12個）\n' +
+    '- steps: 手順を1文ずつ順番に（最大10・火加減や時間の目安を入れ、料理初心者にも分かるように）\n' +
+    '- time: 目安の調理時間（例「約15分」）\n' +
+    '- servings: 分量の目安（例「1人分」）\n' +
+    '- tips: コツを一言（無ければ空文字）';
+  var out = geminiJson_([{ text: prompt }]);
+  var str = function(s, n){ return (typeof s === 'string') ? s.slice(0, n) : ''; };
+  var ings = Array.isArray(out.ingredients) ? out.ingredients.slice(0, 12).map(function(x){
+    x = x || {};
+    return { item: str(x.item, 40), amount: str(x.amount, 30) };
+  }).filter(function(x){ return x.item; }) : [];
+  var steps = Array.isArray(out.steps) ? out.steps.filter(function(x){ return typeof x === 'string' && x.trim(); })
+                                            .map(function(x){ return x.slice(0, 300); }).slice(0, 12) : [];
+  return {
+    title: str(out.title, 60) || name,
+    servings: str(out.servings, 20),
+    time: str(out.time, 20),
+    ingredients: ings,
+    steps: steps,
+    tips: str(out.tips, 300)
+  };
 }
 
 /** 在庫スナップショットを保存（毎朝の期限通知メールが読む） */

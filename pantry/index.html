@@ -76,6 +76,7 @@ main{ max-width:560px; margin:0 auto; padding:14px 14px 10px; }
   border-radius:10px; font-size:12.5px; font-weight:700; padding:9px 11px; cursor:pointer;
 }
 .item .act.buy{ background:var(--green); border-color:var(--green); color:#fff; }
+.item .act.aff{ text-decoration:none; background:#fff; border-color:#e2b6b6; color:#bf0000; }
 .empty{ text-align:center; color:var(--sub); font-size:13.5px; padding:26px 8px; line-height:1.7; }
 
 /* recipes */
@@ -205,9 +206,16 @@ const defaultCookFilter = () => ({ meal:"", genre:"" });
 /* ---------- persistence ---------- */
 function uid(){ try{ return crypto.randomUUID(); }catch(e){ return String(Date.now())+"-"+Math.random().toString(16).slice(2); } }
 function isApiUrl(u){ try{ const p=new URL(u); return p.protocol==="https:" && p.hostname==="script.google.com"; }catch(e){ return false; } }
+/* 買うものリスト→楽天検索リンク。アフィリエイトIDがあれば成果計測用リンクで包む（無ければ通常検索＝実験の計測開始用） */
+function rakutenUrl(keyword){
+  const target="https://search.rakuten.co.jp/search/mall/"+encodeURIComponent(keyword)+"/";
+  const id=(state.affId||"").trim();
+  if(id) return "https://hb.afl.rakuten.co.jp/hgc/"+encodeURIComponent(id)+"/?pc="+encodeURIComponent(target)+"&m="+encodeURIComponent(target);
+  return target;
+}
 function load(){
   try{ const raw=localStorage.getItem(KEY); if(raw) return sanitize(JSON.parse(raw)); }catch(e){}
-  return { items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter() };
+  return { items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0 };
 }
 function save(){
   try{ localStorage.setItem(KEY, JSON.stringify(state)); return true; }
@@ -216,7 +224,7 @@ function save(){
 function sanitize(o){
   // バックアップとして解釈できないものは例外（誤ファイルでデータを消さないため）
   if(!o || typeof o!=="object" || Array.isArray(o) || !Array.isArray(o.items)) throw new Error("not a valid backup");
-  const out = { items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter() };
+  const out = { items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0 };
   const cf = o.cookFilter;
   if(cf && typeof cf==="object" && !Array.isArray(cf)){
     out.cookFilter = { meal:validCook(cf.meal, COOK_MEALS), genre:validCook(cf.genre, COOK_GENRES) };
@@ -224,6 +232,8 @@ function sanitize(o){
   // apiUrl はデータを外部送信する先なので、自分のApps Script(https+script.google.com)以外は破棄
   if(typeof o.apiUrl==="string" && o.apiUrl.length<=2000 && isApiUrl(o.apiUrl)) out.apiUrl=o.apiUrl;
   if(typeof o.notifyDays==="number" && isFinite(o.notifyDays) && o.notifyDays>=1 && o.notifyDays<=14) out.notifyDays=Math.round(o.notifyDays);
+  if(typeof o.affId==="string" && o.affId.length<=200) out.affId=o.affId.trim();
+  if(typeof o.affClicks==="number" && isFinite(o.affClicks) && o.affClicks>=0) out.affClicks=Math.round(o.affClicks);
   const seen=new Set();
   for(const it of o.items){
     if(!it || typeof it.name!=="string" || !it.name.trim()) continue;
@@ -333,6 +343,10 @@ function itemRow(it, mode){
   const sub = mode==="stock"
     ? (it.expiry ? esc((it.kind||"賞味期限")+" "+it.expiry.replace(/-/g,"/")) : "期限未登録（📷で追加）")
     : "品切れ中";
+  // 買うものリストの各行に楽天検索リンク（アフィリエイト実験。タップ数を計測）
+  const shopLink = mode==="shop"
+    ? '<a class="act aff" data-action="aff" href="'+esc(rakutenUrl(it.name))+'" target="_blank" rel="noopener" aria-label="楽天で探す">🛒 探す</a>'
+    : "";
   return '<div class="item">'+
       '<div class="body" data-action="edit" data-id="'+esc(it.id)+'">'+
         '<div class="name">'+esc(it.name)+'</div>'+
@@ -340,6 +354,7 @@ function itemRow(it, mode){
       '</div>'+
       (mode==="stock" ? chip(it) : "")+
       cam+
+      shopLink+
       btn+
     '</div>';
 }
@@ -371,7 +386,7 @@ function renderShop(){
   html+= list.length
     ? list.map(it=>itemRow(it,"shop")).join("")
     : '<div class="empty">品切れの食材はありません。<br>在庫タブで「切らした」を押すと、ここに並びます。</div>';
-  if(list.length) html+='<p class="note" style="margin:6px 4px 0">買ったら「買った」をタップ → 新しい期限を入れて在庫に戻します。</p>';
+  if(list.length) html+='<p class="note" style="margin:6px 4px 0">🛒 探す＝楽天で検索して注文。買ったら「買った」をタップ → 新しい期限を入れて在庫に戻します。</p>';
   el("tab-shop").innerHTML=html;
 }
 
@@ -435,6 +450,13 @@ function renderSettings(){
       '<p class="note">データはこの端末のブラウザ内に保存されます。機種変更前などに書き出しをおすすめします（連携URLは含まれません）。</p>'+
       '<div class="btn-row"><button class="btn" data-action="export">書き出す</button>'+
       '<button class="btn secondary" data-action="import">読み込む</button></div>'+
+    '</div>'+
+    '<div class="section-title">楽天で探す（アフィリエイト実験）</div>'+
+    '<div class="card">'+
+      '<p class="note">「買うものリスト」の各品目に <b>🛒 探す</b> ボタンを付けています（楽天で検索）。<a href="https://affiliate.rakuten.co.jp/" target="_blank" rel="noopener">楽天アフィリエイト</a>に登録してIDを入れると、そこ経由で買われた分が成果として計上されます（未入力でも通常の検索リンクとして動作）。</p>'+
+      '<label class="field">楽天アフィリエイトID（任意）<input id="setAffId" type="text" placeholder="例）1a2b3c4d.5e6f7g8h.1a2b3c4d.5e6f7g8h" value="'+esc(state.affId||"")+'"></label>'+
+      '<button class="btn" data-action="saveAff">保存</button>'+
+      '<p class="note" style="margin-top:10px">これまでの「探す」タップ数：<b>'+(state.affClicks||0)+'</b> 回（＝購買意欲の実験データ。実際に売れたかは楽天の管理画面で確認）</p>'+
     '</div>'+
     '<div class="card"><button class="btn danger" data-action="reset">全データを削除</button></div>'+
     '<div class="card"><p class="note">💰 食費の記録は <a href="../">食費家計簿</a> へ</p></div>'+
@@ -949,6 +971,11 @@ function saveNotify(){
   state.notifyDays=n;
   if(save()){ toast("保存しました"); schedulePantrySync(); render(); }
 }
+function saveAff(){
+  const v=(el("setAffId").value||"").trim().slice(0,200);
+  state.affId=v;
+  if(save()){ toast("保存しました"); render(); }
+}
 function exportData(){
   try{
     const data=Object.assign({}, state);
@@ -973,7 +1000,7 @@ async function resetData(){
   }
   stateGen++;
   resetDetailState();   // 手順キャッシュも破棄（削除後に古い手順が残らないように）
-  state={ items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter() };
+  state={ items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0 };
   save(); render(); toast("削除しました");
 }
 el("importFile").addEventListener("change", e=>{
@@ -1018,9 +1045,11 @@ document.addEventListener("click", e=>{
   else if(a==="detail") openRecipeDetail(b.dataset.list, Number(b.dataset.idx));
   else if(a==="closeSheet") closeSheet();
   else if(a==="suggest") suggest();
+  else if(a==="aff"){ state.affClicks=(state.affClicks||0)+1; save(); }  // preventDefaultしない＝リンクは新タブで開く
   else if(a==="saveApi") saveApi();
   else if(a==="testApi") testApi();
   else if(a==="saveNotify") saveNotify();
+  else if(a==="saveAff") saveAff();
   else if(a==="export") exportData();
   else if(a==="import") el("importFile").click();
   else if(a==="reset") resetData();

@@ -185,12 +185,21 @@ function geminiJson_(parts){
     contents: [{ parts: parts }],
     generationConfig: { responseMimeType: 'application/json', temperature: 0.3, maxOutputTokens: 8192 }
   };
-  var res = UrlFetchApp.fetch(url, {
+  var options = {
     method: 'post', contentType: 'application/json',
     payload: JSON.stringify(payload), muteHttpExceptions: true
-  });
-  var code = res.getResponseCode();
-  if(code === 429) throw new Error('AIの無料枠の上限です。少し時間をおいてお試しください');
+  };
+  // 一時的な混雑/レート系(429/500/503/529)は数秒あけて自動リトライ（最大3回）
+  var res, code, delays = [0, 1500, 3500];
+  for(var attempt = 0; attempt < delays.length; attempt++){
+    if(delays[attempt]) Utilities.sleep(delays[attempt]);
+    res = UrlFetchApp.fetch(url, options);
+    code = res.getResponseCode();
+    if(code === 200) break;
+    if(code !== 429 && code !== 500 && code !== 503 && code !== 529) break;  // 再試行しても無駄なエラーは即中断
+  }
+  if(code === 429) throw new Error('AIの無料枠の上限か混雑です。少し時間をおいてお試しください');
+  if(code === 503 || code === 529) throw new Error('AIが混雑しています。少し時間をおいてもう一度お試しください');
   if(code !== 200) throw new Error('AI応答エラー（HTTP ' + code + '）');
   var data = JSON.parse(res.getContentText());
   var cand = data && data.candidates && data.candidates[0];

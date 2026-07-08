@@ -167,6 +167,32 @@ nav.tabbar button.active{ color:var(--green); }
 @keyframes spin{ to{ transform:rotate(360deg); } }
 .foot{ text-align:center; font-size:11.5px; color:var(--sub); padding:14px 0 6px; }
 a{ color:var(--green); }
+
+/* ---- Pro テーマ（買い切りで解放） ---- */
+:root[data-theme="dark"]{
+  --bg:#14171a; --card:#1e2329; --ink:#e7ebee; --sub:#98a2ab; --line:#2d353d;
+  --green:#4caf63; --green-soft:#20302a;
+  --red:#ef5350; --red-soft:#3a2626;
+}
+:root[data-theme="dark"] .field input,
+:root[data-theme="dark"] .field select,
+:root[data-theme="dark"] .item .act{ background:#262d34; }
+:root[data-theme="dark"] .item .act.aff{ background:#262d34; border-color:#5c3b3b; color:#ff8a80; }
+:root[data-theme="dark"] .sheet,
+:root[data-theme="dark"] nav.tabbar{ background:#1b2025; }
+:root[data-theme="dark"] .recipe:active{ background:#232a30; }
+:root[data-theme="dark"] .d-tips{ background:#20302a; }
+:root[data-theme="dark"] .chip.c-gray{ background:#2a3138; }
+:root[data-theme="dark"] .btn.secondary{ background:#2a323a; }
+:root[data-theme="dark"] .banner{ color:#ffb4ab; border-color:#5c3b3b; }
+:root[data-theme="dark"] .banner.ok{ color:#8fd19a; border-color:#2f4a38; }
+:root[data-theme="dark"] .chip.c-red{ color:#ff8f84; border-color:#5c3b3b; }
+
+:root[data-theme="ocean"]{
+  --bg:#eaf4f7; --card:#ffffff; --ink:#0e2a33; --sub:#5c7a84; --line:#cfe6ec;
+  --green:#0e7490; --green-soft:#d9eef4;
+  --red:#c62828; --red-soft:#fdeaea;
+}
 </style>
 </head>
 <body>
@@ -200,6 +226,10 @@ const el = id => document.getElementById(id);
 let currentTab = "stock";
 const COOK_MEALS = ["朝","昼","夜","おやつ","夜食"];
 const COOK_GENRES = ["和食","洋食","中華","エスニック","麺・丼","スープ","サラダ・副菜"];
+// Pro版（買い切り・BOOTHで配布する解放コード）。ソースには生コードではなくSHA-256のみを置く
+const THEMES = ["default","dark","ocean"];
+const PRO_HASH = "00fc8f3b6a9d65231e5e04baf5ed28a21dc447d5cc7c9d426a9e83b2d1568cca";
+const BOOTH_URL = "https://booth.pm/";   // ←出品後、自分のPro版商品URLに差し替え
 const validCook = (v, list) => (typeof v==="string" && list.indexOf(v)>=0) ? v : "";
 const defaultCookFilter = () => ({ meal:"", genre:"" });
 
@@ -215,7 +245,7 @@ function rakutenUrl(keyword){
 }
 function load(){
   try{ const raw=localStorage.getItem(KEY); if(raw) return sanitize(JSON.parse(raw)); }catch(e){}
-  return { items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0 };
+  return { items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0, pro:false, theme:"default" };
 }
 function save(){
   try{ localStorage.setItem(KEY, JSON.stringify(state)); return true; }
@@ -224,7 +254,7 @@ function save(){
 function sanitize(o){
   // バックアップとして解釈できないものは例外（誤ファイルでデータを消さないため）
   if(!o || typeof o!=="object" || Array.isArray(o) || !Array.isArray(o.items)) throw new Error("not a valid backup");
-  const out = { items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0 };
+  const out = { items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0, pro:false, theme:"default" };
   const cf = o.cookFilter;
   if(cf && typeof cf==="object" && !Array.isArray(cf)){
     out.cookFilter = { meal:validCook(cf.meal, COOK_MEALS), genre:validCook(cf.genre, COOK_GENRES) };
@@ -234,6 +264,8 @@ function sanitize(o){
   if(typeof o.notifyDays==="number" && isFinite(o.notifyDays) && o.notifyDays>=1 && o.notifyDays<=14) out.notifyDays=Math.round(o.notifyDays);
   if(typeof o.affId==="string" && o.affId.length<=200) out.affId=o.affId.trim();
   if(typeof o.affClicks==="number" && isFinite(o.affClicks) && o.affClicks>=0) out.affClicks=Math.round(o.affClicks);
+  out.pro = o.pro===true;
+  if(typeof o.theme==="string" && THEMES.indexOf(o.theme)>=0) out.theme=o.theme;
   const seen=new Set();
   for(const it of o.items){
     if(!it || typeof it.name!=="string" || !it.name.trim()) continue;
@@ -450,6 +482,18 @@ function renderSettings(){
       '<p class="note">データはこの端末のブラウザ内に保存されます。機種変更前などに書き出しをおすすめします（連携URLは含まれません）。</p>'+
       '<div class="btn-row"><button class="btn" data-action="export">書き出す</button>'+
       '<button class="btn secondary" data-action="import">読み込む</button></div>'+
+    '</div>'+
+    '<div class="section-title">🎁 Pro版（買い切り・開発応援）</div>'+
+    '<div class="card">'+
+      (state.pro
+        ? '<p class="note">✅ <b>Pro版 解放済み</b>・応援ありがとうございます🎉</p>'+
+          '<label class="field">テーマ<select id="setTheme">'+
+            [["default","標準（ライト）"],["dark","ダーク"],["ocean","オーシャン"]].map(t=>'<option value="'+t[0]+'"'+((state.theme||"default")===t[0]?" selected":"")+'>'+t[1]+'</option>').join("")+
+          '</select></label>'
+        : '<p class="note">¥300の買い切りで<b>テーマ（ダーク／オーシャン）</b>を解放できます。AI・在庫・家計簿は<b>無料のまま全部使えます</b>（Proは見た目＋開発応援のオプション）。</p>'+
+          '<p class="note"><a href="'+esc(BOOTH_URL)+'" target="_blank" rel="noopener">▶ BOOTHでPro版を入手（¥300）</a> → 付属の<b>解放コード</b>を下に入力</p>'+
+          '<label class="field">解放コード<input id="setProCode" type="text" placeholder="KAKEIBO-PRO-XXXX-XXXX" autocapitalize="characters" autocomplete="off"></label>'+
+          '<button class="btn" data-action="redeemPro">解放する</button>')+
     '</div>'+
     '<div class="section-title">楽天で探す（アフィリエイト実験）</div>'+
     '<div class="card">'+
@@ -976,6 +1020,28 @@ function saveAff(){
   state.affId=v;
   if(save()){ toast("保存しました"); render(); }
 }
+/* ---- Pro版（テーマ・応援） ---- */
+function applyTheme(){
+  const t = (state.pro && THEMES.indexOf(state.theme)>=0) ? state.theme : "default";
+  document.documentElement.setAttribute("data-theme", t);
+}
+function sha256Hex(s){
+  return crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))
+    .then(buf=>[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join(""));
+}
+async function redeemPro(){
+  const raw=((el("setProCode")||{}).value||"").trim().toUpperCase();
+  if(!raw){ toast("解放コードを入力してください"); return; }
+  let h;
+  try{ h=await sha256Hex(raw); }catch(e){ toast("この端末では確認できませんでした（通信環境をご確認ください）"); return; }
+  if(h===PRO_HASH){
+    state.pro=true;
+    if(THEMES.indexOf(state.theme)<0) state.theme="default";
+    if(save()){ applyTheme(); toast("Pro版を解放しました。応援ありがとうございます🎉"); render(); }
+  } else {
+    toast("コードが正しくありません");
+  }
+}
 function exportData(){
   try{
     const data=Object.assign({}, state);
@@ -1000,7 +1066,7 @@ async function resetData(){
   }
   stateGen++;
   resetDetailState();   // 手順キャッシュも破棄（削除後に古い手順が残らないように）
-  state={ items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0 };
+  state={ items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0, pro:false, theme:"default" };
   save(); render(); toast("削除しました");
 }
 el("importFile").addEventListener("change", e=>{
@@ -1050,6 +1116,7 @@ document.addEventListener("click", e=>{
   else if(a==="testApi") testApi();
   else if(a==="saveNotify") saveNotify();
   else if(a==="saveAff") saveAff();
+  else if(a==="redeemPro") redeemPro();
   else if(a==="export") exportData();
   else if(a==="import") el("importFile").click();
   else if(a==="reset") resetData();
@@ -1059,6 +1126,7 @@ document.addEventListener("click", e=>{
 document.addEventListener("change", e=>{
   if(e.target.id==="fMeal"){ state.cookFilter.meal=validCook(e.target.value, COOK_MEALS); save(); }
   else if(e.target.id==="fGenre"){ state.cookFilter.genre=validCook(e.target.value, COOK_GENRES); save(); }
+  else if(e.target.id==="setTheme"){ if(state.pro){ state.theme=THEMES.indexOf(e.target.value)>=0?e.target.value:"default"; save(); applyTheme(); } }
 });
 
 /* 日付が変わったときの表示更新（深夜をまたいで開きっぱなし等） */
@@ -1067,6 +1135,7 @@ window.addEventListener("focus", onWake);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) onWake(); });
 
 /* ---------- init ---------- */
+applyTheme();
 render();
 </script>
 </body>

@@ -876,9 +876,16 @@ async function suggest(){
   const btn=el("suggestBtn");
   if(btn){ btn.disabled=true; btn.innerHTML='<span class="spinner"></span>提案を考え中…（数秒〜十数秒）'; }
   try{
-    const names=stockItems().map(i=>{
+    // 賞味期限が近い順に並べ、残り日数タグを付けて渡す（AIが期限の近い食材から使い切るよう優先）
+    const names=sortStock(stockItems()).map(i=>{
       const d=daysLeft(i.expiry);
-      return i.name + (d!==null && d<=state.notifyDays ? "(期限間近)" : "");
+      let tag="";
+      if(d!==null){
+        if(d<0) tag="(期限切れ)";
+        else if(d===0) tag="(今日まで)";
+        else if(d<=state.notifyDays) tag="(あと"+d+"日)";
+      }
+      return i.name+tag;
     }).slice(0,60);
     const cf=state.cookFilter || defaultCookFilter();
     const res=await api({ action:"recipes", items:names, meal:cf.meal, genre:cf.genre }, 90000);

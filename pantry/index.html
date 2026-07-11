@@ -92,6 +92,12 @@ main{ max-width:560px; margin:0 auto; padding:14px 14px 10px; }
 /* cook filter */
 .filter-row{ display:flex; gap:10px; }
 .filter-row .field{ flex:1; margin-top:0; }
+.pick-wrap{ margin-top:14px; }
+.pick-head{ font-size:13px; font-weight:600; color:var(--sub); margin-bottom:7px; }
+.pick-head a{ float:right; font-size:12px; font-weight:700; cursor:pointer; }
+.pick-chips{ display:flex; flex-wrap:wrap; gap:7px; max-height:156px; overflow-y:auto; }
+.pick{ border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:999px; padding:6px 12px; font-size:13px; font-weight:600; cursor:pointer; -webkit-appearance:none; }
+.pick.on{ background:var(--green); border-color:var(--green); color:#fff; }
 
 /* recipe detail sheet */
 .d-meta{ font-size:12.5px; color:var(--sub); margin-top:2px; }
@@ -245,7 +251,7 @@ function rakutenUrl(keyword){
 }
 function load(){
   try{ const raw=localStorage.getItem(KEY); if(raw) return sanitize(JSON.parse(raw)); }catch(e){}
-  return { items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0, pro:false, theme:"default" };
+  return { items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0, pro:false, theme:"default", cookPick:[] };
 }
 function save(){
   try{ localStorage.setItem(KEY, JSON.stringify(state)); return true; }
@@ -254,7 +260,7 @@ function save(){
 function sanitize(o){
   // バックアップとして解釈できないものは例外（誤ファイルでデータを消さないため）
   if(!o || typeof o!=="object" || Array.isArray(o) || !Array.isArray(o.items)) throw new Error("not a valid backup");
-  const out = { items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0, pro:false, theme:"default" };
+  const out = { items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0, pro:false, theme:"default", cookPick:[] };
   const cf = o.cookFilter;
   if(cf && typeof cf==="object" && !Array.isArray(cf)){
     out.cookFilter = { meal:validCook(cf.meal, COOK_MEALS), genre:validCook(cf.genre, COOK_GENRES) };
@@ -266,6 +272,7 @@ function sanitize(o){
   if(typeof o.affClicks==="number" && isFinite(o.affClicks) && o.affClicks>=0) out.affClicks=Math.round(o.affClicks);
   out.pro = o.pro===true;
   if(typeof o.theme==="string" && THEMES.indexOf(o.theme)>=0) out.theme=o.theme;
+  if(Array.isArray(o.cookPick)) out.cookPick = o.cookPick.filter(x=>typeof x==="string" && x).slice(0,500);
   const seen=new Set();
   for(const it of o.items){
     if(!it || typeof it.name!=="string" || !it.name.trim()) continue;
@@ -429,12 +436,27 @@ function cookOptions(list, sel){
 function renderCook(){
   const st=stockItems();
   const cf=state.cookFilter || defaultCookFilter();
+  // 「メニューに含める食材」＝在庫の中から選んだIDのうち、今も在庫にあるものだけ
+  const picked=(state.cookPick||[]).filter(id=>st.some(i=>i.id===id));
+  const pset=new Set(picked);
+  const pickUi = st.length
+    ? '<div class="pick-wrap">'+
+        '<div class="pick-head">メニューに含める食材'+
+          (picked.length?'（'+picked.length+'品）<a data-action="pickClear">クリア</a>':'（未選択なら在庫すべて）')+
+        '</div>'+
+        '<div class="pick-chips">'+
+          sortStock(st).map(i=>'<button class="pick'+(pset.has(i.id)?" on":"")+'" data-action="pickTog" data-id="'+esc(i.id)+'">'+esc(i.name)+'</button>').join("")+
+        '</div>'+
+      '</div>'
+    : "";
+  const suggestLabel = picked.length ? "🍳 選んだ"+picked.length+"品で提案" : "🍳 この在庫で提案してもらう";
   let html='<div class="card"><p class="note">いまの在庫（'+st.length+'品）から、一人暮らしで作りやすい料理をAIが提案します。<b>塩・砂糖・醤油・味噌・油などの基本調味料は常備している前提</b>です。</p>'+
     '<div class="filter-row">'+
       '<label class="field">いつ食べる<select id="fMeal">'+cookOptions(COOK_MEALS, cf.meal)+'</select></label>'+
       '<label class="field">ジャンル<select id="fGenre">'+cookOptions(COOK_GENRES, cf.genre)+'</select></label>'+
     '</div>'+
-    '<button class="btn" data-action="suggest" id="suggestBtn" style="margin-top:12px"'+(st.length?"":" disabled")+'>🍳 この在庫で提案してもらう</button>'+
+    pickUi+
+    '<button class="btn" data-action="suggest" id="suggestBtn" style="margin-top:12px"'+(st.length?"":" disabled")+'>'+suggestLabel+'</button>'+
     (st.length ? "" : '<p class="note" style="margin-top:8px">在庫に食材を追加すると提案できます。</p>')+
     (state.apiUrl ? "" : '<p class="note" style="margin-top:8px">先に「設定 → AI連携」でURLを登録してください。</p>')+
   '</div>';
@@ -876,8 +898,15 @@ async function suggest(){
   const btn=el("suggestBtn");
   if(btn){ btn.disabled=true; btn.innerHTML='<span class="spinner"></span>提案を考え中…（数秒〜十数秒）'; }
   try{
+    // 「メニューに含める食材」で絞り込み（選択があればその食材だけで提案。全部在庫から消えていれば在庫全体にフォールバック）
+    let stock=stockItems();
+    const pset=new Set(state.cookPick||[]);
+    if(pset.size){
+      const sub=stock.filter(i=>pset.has(i.id));
+      if(sub.length) stock=sub;
+    }
     // 賞味期限が近い順に並べ、残り日数タグを付けて渡す（AIが期限の近い食材から使い切るよう優先）
-    const names=sortStock(stockItems()).map(i=>{
+    const names=sortStock(stock).map(i=>{
       const d=daysLeft(i.expiry);
       let tag="";
       if(d!==null){
@@ -1027,6 +1056,15 @@ function saveAff(){
   state.affId=v;
   if(save()){ toast("保存しました"); render(); }
 }
+/* 料理タブ「メニューに含める食材」の選択トグル */
+function togglePick(id){
+  if(!id) return;
+  if(!Array.isArray(state.cookPick)) state.cookPick=[];
+  const i=state.cookPick.indexOf(id);
+  if(i>=0) state.cookPick.splice(i,1); else state.cookPick.push(id);
+  save();
+  if(currentTab==="cook") renderCook();
+}
 /* ---- Pro版（テーマ・応援） ---- */
 function applyTheme(){
   const t = (state.pro && THEMES.indexOf(state.theme)>=0) ? state.theme : "default";
@@ -1073,7 +1111,7 @@ async function resetData(){
   }
   stateGen++;
   resetDetailState();   // 手順キャッシュも破棄（削除後に古い手順が残らないように）
-  state={ items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0, pro:false, theme:"default" };
+  state={ items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0, pro:false, theme:"default", cookPick:[] };
   save(); render(); toast("削除しました");
 }
 el("importFile").addEventListener("change", e=>{
@@ -1118,6 +1156,8 @@ document.addEventListener("click", e=>{
   else if(a==="detail") openRecipeDetail(b.dataset.list, Number(b.dataset.idx));
   else if(a==="closeSheet") closeSheet();
   else if(a==="suggest") suggest();
+  else if(a==="pickTog") togglePick(b.dataset.id);
+  else if(a==="pickClear"){ state.cookPick=[]; save(); if(currentTab==="cook") renderCook(); }
   else if(a==="aff"){ state.affClicks=(state.affClicks||0)+1; save(); }  // preventDefaultしない＝リンクは新タブで開く
   else if(a==="saveApi") saveApi();
   else if(a==="testApi") testApi();

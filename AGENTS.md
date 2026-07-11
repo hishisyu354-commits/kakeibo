@@ -156,6 +156,7 @@ curl -sS -L "<exec URL>?token=<TOKEN>" \
 
 - 家計簿エントリ: `{id,date,amount,memo,ts,[src]}`。`sanitize()` が不正日付・未来日付・amount<=0 を除外。`src`=カード同期の重複排除ID。
 - ストッカー state（`pantry.v1`）: `{items[], apiUrl, notifyDays, lastRecipes, cookFilter{meal,genre}, affId, affClicks, pro, theme, cookPick[]}`。各 item: `{id,name,expiry|null,kind:'賞味期限'|'消費期限'|null,state:'stock'|'out',addedAt,outAt}`。
+- 家計簿は保存前に `foodBudget.v1.before-save` / `foodBudget.v1.recovery.YYYY-MM-DD` へ退避し、起動時・設定の「家計簿の復旧を試す」で現在より件数が多い候補を復旧する。統合や保存処理を変える時はこの復旧導線を壊さない。
 - **`sanitize()` はホワイトリスト方式**（load時とインポート時に通す）。フィールドを追加したら **3箇所のデフォルトリテラル**（load fallback / sanitize out / reset）と **sanitizeのバリデーション**を必ず揃える。値は型・範囲・列挙をチェックしてから採用。
 - **非同期の取り違え防止**: シートは `openSheet` が `dataset.gen` を発番（`sheetGen`）。提案の世代は `recipesGen`。古い応答が新しいUIに書き込まないよう、書き込み前に世代一致を確認する。
 

@@ -322,9 +322,15 @@ a{ color:var(--green); }
 const KEY = "pantry.v1";
 const BUDGET_KEY = "foodBudget.v1";
 const DEFAULT_START = "2026-07-01";
+const BUDGET_RECOVERY_KEYS = [
+  "foodBudget.v1.before-save",
+  "foodBudget.v1.recovery",
+  "foodBudget.v1.pre-unify"
+];
 const el = id => document.getElementById(id);
 let currentTab = "budget";
 let budgetView = "today";
+let budgetRecoveredOnLoad = null;
 const COOK_MEALS = ["朝","昼","夜","おやつ","夜食"];
 const COOK_GENRES = ["和食","洋食","中華","エスニック","麺・丼","スープ","サラダ・副菜"];
 // Pro版（買い切り・BOOTHで配布する解放コード）。ソースには生コードではなくSHA-256のみを置く
@@ -389,12 +395,62 @@ function sanitize(o){
   return out;
 }
 function loadBudget(){
-  try{ const raw=localStorage.getItem(BUDGET_KEY); if(raw) return sanitizeBudget(JSON.parse(raw)); }catch(e){}
+  const best=findBestBudgetCandidate();
+  if(best){
+    const currentCount=budgetCountFromRaw(localStorage.getItem(BUDGET_KEY));
+    if(best.key!==BUDGET_KEY && best.count>currentCount){
+      budgetRecoveredOnLoad={ key:best.key, from:currentCount, to:best.count };
+      try{ localStorage.setItem(BUDGET_KEY, JSON.stringify(best.data)); }catch(e){}
+    }
+    return best.data;
+  }
   return { dailyAllowance:1500, startDate:DEFAULT_START, syncUrl:"", entries:[] };
 }
 function saveBudget(){
-  try{ localStorage.setItem(BUDGET_KEY, JSON.stringify(budget)); return true; }
+  try{
+    const prev=localStorage.getItem(BUDGET_KEY);
+    if(prev && budgetCountFromRaw(prev)>=((budget && budget.entries && budget.entries.length) || 0)) snapshotBudgetRaw(prev);
+    localStorage.setItem(BUDGET_KEY, JSON.stringify(budget));
+    return true;
+  }
   catch(e){ toast("家計簿を保存できませんでした（端末の空き容量をご確認ください）"); return false; }
+}
+function budgetCountFromRaw(raw){
+  try{
+    const o=JSON.parse(raw||"null");
+    return (o && Array.isArray(o.entries)) ? o.entries.length : 0;
+  }catch(e){ return 0; }
+}
+function snapshotBudgetRaw(raw){
+  if(!raw || budgetCountFromRaw(raw)<=0) return;
+  try{
+    localStorage.setItem("foodBudget.v1.before-save", raw);
+    localStorage.setItem("foodBudget.v1.recovery."+todayStr(), raw);
+  }catch(e){}
+}
+function findBestBudgetCandidate(){
+  const seen=new Set(), candidates=[];
+  const addKey=key=>{
+    if(!key || seen.has(key)) return;
+    seen.add(key);
+    let raw=null;
+    try{ raw=localStorage.getItem(key); }catch(e){}
+    if(!raw) return;
+    try{
+      const data=sanitizeBudget(JSON.parse(raw));
+      candidates.push({ key, data, count:data.entries.length });
+    }catch(e){}
+  };
+  addKey(BUDGET_KEY);
+  BUDGET_RECOVERY_KEYS.forEach(addKey);
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const key=localStorage.key(i);
+      if(key && /^foodBudget\.v1\./.test(key)) addKey(key);
+    }
+  }catch(e){}
+  candidates.sort((a,b)=> b.count-a.count || (a.key===BUDGET_KEY?-1:b.key===BUDGET_KEY?1:0));
+  return candidates[0] || null;
 }
 function sanitizeBudget(o){
   if(!o || typeof o!=="object" || Array.isArray(o) || !Array.isArray(o.entries)) throw new Error("not a valid budget backup");
@@ -549,6 +605,13 @@ function budgetEntryRow(e){
     '<div class="entry-amt">'+y(e.amount)+'</div>'+
     '<button class="del" data-action="budgetDel" data-id="'+esc(e.id)+'" aria-label="削除">×</button></div>';
 }
+function recentBudgetEntries(limit, excludeDate){
+  return budget.entries
+    .filter(e=>!excludeDate || e.date!==excludeDate)
+    .slice()
+    .sort((a,b)=> b.date.localeCompare(a.date) || ((b.ts||0)-(a.ts||0)))
+    .slice(0,limit);
+}
 function addBudgetExpense(date, amount, memo){
   const amt=Math.round(Number(amount));
   if(!isValidDate(date) || date>todayStr() || !Number.isFinite(amt) || amt<=0) return "invalid";
@@ -603,6 +666,7 @@ function renderBudgetToday(){
   const pct=allow>0 ? Math.min(100, spent/allow*100) : 0;
   const days=series.filter(d=>d.date<=today).length;
   const list=(budgetEntriesByDate()[today] || []);
+  const recent=recentBudgetEntries(8, today);
   return '<div class="budget-grid">'+
       '<div class="card '+cls(remain)+'">'+
         '<div class="budget-label">今日の残り</div>'+
@@ -628,7 +692,14 @@ function renderBudgetToday(){
       '</div>'+
     '</form>'+
     '<div class="section-title">今日の記録</div>'+
-    (list.length ? list.map(budgetEntryRow).join("") : '<div class="empty">まだ記録がありません<br>レシート撮影でもここに反映されます</div>');
+    (list.length ? list.map(budgetEntryRow).join("") : '<div class="empty">まだ記録がありません<br>レシート撮影でもここに反映されます</div>')+
+    (recent.length
+      ? '<div class="section-title">最近の記録</div>'+recent.map(e=>
+          '<div class="entry"><div class="entry-memo">'+esc(fmtMD(e.date)+" "+(e.memo||"（メモなし）"))+'</div>'+
+          '<div class="entry-amt">'+y(e.amount)+'</div>'+
+          '<button class="del" data-action="budgetDel" data-id="'+esc(e.id)+'" aria-label="削除">×</button></div>'
+        ).join("")
+      : "");
 }
 function renderBudgetDaily(){
   const current=el("tab-budget");
@@ -811,6 +882,8 @@ function renderSettings(){
       '<p class="note">家計簿と食材データをまとめて書き出します。連携URL（token入り）は含めません。古い家計簿だけ/食材だけのバックアップも読み込めます。</p>'+
       '<div class="btn-row"><button class="btn" data-action="export">書き出す</button>'+
       '<button class="btn secondary" data-action="import">読み込む</button></div>'+
+      '<button class="btn secondary" data-action="recoverBudget">家計簿の復旧を試す</button>'+
+      '<p class="note" style="margin-top:10px">統合前や保存前の退避データが端末内に残っていれば、現在より件数が多い家計簿へ戻します。</p>'+
     '</div>'+
     '<div class="section-title">🎁 Pro版（買い切り・開発応援）</div>'+
     '<div class="card">'+
@@ -909,6 +982,24 @@ function saveBudgetSettings(){
   if(s && isValidDate(s)) budget.startDate=s;
   if(!saveBudget()){ budget.dailyAllowance=prev.dailyAllowance; budget.startDate=prev.startDate; return; }
   render(); toast("保存しました");
+}
+function recoverBudgetFromSnapshots(){
+  const best=findBestBudgetCandidate();
+  const currentCount=(budget.entries||[]).length;
+  if(!best || best.count<=currentCount){
+    toast("現在より多い家計簿の退避データは見つかりませんでした");
+    return;
+  }
+  if(!confirm("家計簿を "+currentCount+"件 → "+best.count+"件 に復旧します。よろしいですか？\n（食材データは変更しません）")) return;
+  const prev=budget;
+  const next=best.data;
+  next.syncUrl=prev.syncUrl || next.syncUrl;
+  budget=next;
+  if(!saveBudget()){ budget=prev; return; }
+  currentTab="budget";
+  budgetView="daily";
+  show("budget");
+  toast("家計簿を"+best.count+"件に復旧しました");
 }
 
 /* ---------- item actions ---------- */
@@ -1781,6 +1872,7 @@ document.addEventListener("click", e=>{
   else if(a==="syncNow") syncNow(true);
   else if(a==="saveBudgetSettings") saveBudgetSettings();
   else if(a==="importCsv") el("csvFile").click();
+  else if(a==="recoverBudget") recoverBudgetFromSnapshots();
   else if(a==="saveNotify") saveNotify();
   else if(a==="saveAff") saveAff();
   else if(a==="redeemPro") redeemPro();
@@ -1817,6 +1909,7 @@ if(!budget.startDate){ budget.startDate=DEFAULT_START; saveBudget(); }
 else if(!budget.entries.length && budget.startDate>DEFAULT_START){ budget.startDate=DEFAULT_START; saveBudget(); }
 applyTheme();
 render();
+if(budgetRecoveredOnLoad) toast("家計簿を退避データから"+budgetRecoveredOnLoad.to+"件に復旧しました");
 if(budget.syncUrl) syncNow(false);
 setInterval(()=>{ if(budget.syncUrl && !document.hidden && !el("csvModal")) syncNow(false); }, 60000);
 </script>

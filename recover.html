@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>家計簿データ復旧ツール</title>
+<style>
+:root{ --bg:#f3f5f2; --card:#fff; --ink:#20241f; --sub:#6b7268; --line:#e2e6df; --green:#2f6b3a; --red:#c62828; }
+*{ box-sizing:border-box; }
+body{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif; background:var(--bg); color:var(--ink); line-height:1.6; }
+header{ background:var(--green); color:#fff; padding:calc(14px + env(safe-area-inset-top)) 16px 14px; }
+header h1{ margin:0; font-size:17px; }
+header p{ margin:4px 0 0; font-size:12.5px; opacity:.9; }
+main{ padding:14px 14px calc(28px + env(safe-area-inset-bottom)); max-width:640px; margin:0 auto; }
+.card{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:12px; }
+.note{ font-size:12.5px; color:var(--sub); }
+.big{ font-size:15px; font-weight:700; margin:0 0 8px; }
+table{ width:100%; border-collapse:collapse; font-size:13px; }
+th,td{ text-align:right; padding:7px 6px; border-bottom:1px solid var(--line); white-space:nowrap; }
+th:first-child,td:first-child{ text-align:left; white-space:normal; }
+tr.live td{ background:#fff7e6; }
+.tag{ display:inline-block; font-size:11px; font-weight:700; border-radius:999px; padding:1px 8px; background:#eef1ec; color:var(--sub); margin-left:6px; }
+.tag.best{ background:var(--green); color:#fff; }
+.bal-pos{ color:var(--green); font-weight:700; }
+.bal-neg{ color:var(--red); font-weight:700; }
+.btn{ display:block; width:100%; border:none; border-radius:12px; background:var(--green); color:#fff; font-size:15px; font-weight:700; padding:13px; margin-top:10px; cursor:pointer; }
+.btn.sec{ background:#eef1ec; color:var(--ink); }
+.btn.small{ width:auto; display:inline-block; padding:7px 12px; font-size:12.5px; margin:0; }
+.mono{ width:100%; height:120px; font-family:ui-monospace,Menlo,monospace; font-size:11px; margin-top:8px; border:1px solid var(--line); border-radius:8px; padding:8px; }
+a{ color:var(--green); }
+.warn{ background:#fdeaea; border-color:#f3c9c9; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛟 家計簿データ復旧ツール</h1>
+  <p>この端末に残っている家計簿のバックアップを一覧・統合して復元します</p>
+</header>
+<main>
+  <div class="card">
+    <p class="big">いまの状態</p>
+    <div id="liveBox" class="note">読み込み中…</div>
+  </div>
+
+  <div class="card">
+    <p class="big">① まずこれを試す：全バックアップを統合して復元</p>
+    <p class="note">この端末に残っている全ての退避コピーから、重複しない支出を<b>すべて集めて</b>復元します（同じ支出は二重計上しません）。一番取りこぼしが少ない方法です。実行前に今のデータも安全に退避します。</p>
+    <div id="mergeBox" class="note" style="margin-top:8px"></div>
+    <button class="btn" id="mergeBtn">全バックアップを統合して復元する</button>
+  </div>
+
+  <div class="card">
+    <p class="big">② 個別に見て選ぶ（バックアップ一覧）</p>
+    <p class="note">各コピーの「件数」と「累計収支」を確認し、正しそうなものを選んで復元できます。金額が想定に近いものを選んでください。</p>
+    <div style="overflow-x:auto"><table id="tbl"><thead>
+      <tr><th>バックアップ</th><th>件数</th><th>使った額</th><th>累計収支</th><th></th></tr>
+    </thead><tbody id="rows"></tbody></table></div>
+  </div>
+
+  <div class="card">
+    <p class="big">③ うまくいかない時：データを送って直してもらう</p>
+    <p class="note">下のボタンで全バックアップの中身をコピーし、そのままチャットに貼り付けてください。中身を見て手作業で復元用データを作ります（秘密情報のURLトークンは自動で伏せます）。</p>
+    <button class="btn sec small" id="copyBtn">全バックアップをコピー</button>
+    <textarea id="dump" class="mono" readonly placeholder="ここに出力されます"></textarea>
+  </div>
+
+  <div class="card warn">
+    <p class="note">⚠️ 復元するまで、家計簿タブで<b>金額の追加・削除をしないで</b>ください（退避コピーが上書きされる恐れがあります）。カード自動同期は安全なので、復元後に「今すぐ同期」でカード分を取り戻せます。</p>
+    <p class="note" style="margin-top:8px"><a href="./">← 家計簿アプリに戻る</a></p>
+  </div>
+</main>
+<script>
+"use strict";
+var LIVE_KEY = "foodBudget.v1";
+var DEFAULT_START = "2026-07-01";
+function pad2(n){ n=String(n); return n.length<2?"0"+n:n; }
+function fmt(d){ return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+function todayStr(){ return fmt(new Date()); }
+function parseD(s){ var p=String(s).split("-"); return new Date(+p[0],+p[1]-1,+p[2]); }
+function isValidDate(s){ return typeof s==="string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(parseD(s).getTime()); }
+function daysInclusive(a,b){ return Math.round((parseD(b)-parseD(a))/86400000)+1; }
+function yen(n){ return (n<0?"−":"")+"¥"+Math.abs(Math.round(n)).toLocaleString("ja-JP"); }
+function balClass(n){ return n>=0?"bal-pos":"bal-neg"; }
+
+function parseBudget(raw){
+  try{ var o=JSON.parse(raw); if(o && typeof o==="object" && Array.isArray(o.entries)) return o; }catch(e){}
+  return null;
+}
+// アプリと同じ累計収支ロジック：起算日〜今日まで 支給/日 × 日数 − 使った額
+function stats(b){
+  var today=todayStr();
+  var entries=(b.entries||[]).filter(function(e){ return e && isValidDate(e.date) && e.date<=today && typeof e.amount==="number" && isFinite(e.amount) && e.amount>0; });
+  var earliest=null; for(var i=0;i<entries.length;i++){ if(earliest===null||entries[i].date<earliest) earliest=entries[i].date; }
+  var start=(isValidDate(b.startDate)?b.startDate:null) || earliest || DEFAULT_START;
+  if(earliest && earliest<start) start=earliest;
+  var allowance=(typeof b.dailyAllowance==="number" && b.dailyAllowance>0)?Math.round(b.dailyAllowance):1500;
+  var spent=0; for(var j=0;j<entries.length;j++) spent+=entries[j].amount;
+  var days=Math.max(0, daysInclusive(start, today));
+  return { count:entries.length, spent:spent, allowance:allowance, start:start, balance:days*allowance-spent };
+}
+function collectBackups(){
+  var keys=[];
+  for(var i=0;i<localStorage.length;i++){ var k=localStorage.key(i); if(k && /^foodBudget\.v1/.test(k)) keys.push(k); }
+  // live を先頭、あとは名前順
+  keys.sort(function(a,b){ if(a===LIVE_KEY) return -1; if(b===LIVE_KEY) return 1; return a<b?-1:1; });
+  var out=[];
+  for(var n=0;n<keys.length;n++){
+    var raw=localStorage.getItem(keys[n]); var b=parseBudget(raw);
+    if(b) out.push({ key:keys[n], raw:raw, data:b, st:stats(b) });
+  }
+  return out;
+}
+// id（無ければ date|amount|memo|ts）で和集合。同じ支出は同じidなので二重計上しない。
+function mergeAll(backups){
+  var map={}, order=[];
+  var allowance=1500, startDate=DEFAULT_START, syncUrl="", gotAllowance=false, gotStart=false;
+  for(var i=0;i<backups.length;i++){
+    var b=backups[i].data;
+    if(!gotAllowance && typeof b.dailyAllowance==="number" && b.dailyAllowance>0){ allowance=Math.round(b.dailyAllowance); gotAllowance=true; }
+    if(!gotStart && isValidDate(b.startDate)){ startDate=b.startDate; gotStart=true; }
+    if(!syncUrl && typeof b.syncUrl==="string" && b.syncUrl) syncUrl=b.syncUrl;
+    var es=b.entries||[];
+    for(var j=0;j<es.length;j++){
+      var e=es[j];
+      if(!e || !isValidDate(e.date) || typeof e.amount!=="number" || !isFinite(e.amount) || e.amount<=0) continue;
+      var key=(e.id && String(e.id)) || (e.date+"|"+e.amount+"|"+(e.memo||"")+"|"+(e.ts||""));
+      if(!map[key]){ map[key]=e; order.push(key); }
+    }
+  }
+  var entries=order.map(function(k){ return map[k]; });
+  // 起算日は最古の支出より後ろにしない
+  var earliest=null; for(var m=0;m<entries.length;m++){ if(earliest===null||entries[m].date<earliest) earliest=entries[m].date; }
+  if(earliest && earliest<startDate) startDate=earliest;
+  return { dailyAllowance:allowance, startDate:startDate, syncUrl:syncUrl, entries:entries };
+}
+function snapshotLive(){
+  var raw=localStorage.getItem(LIVE_KEY);
+  if(raw){ try{ localStorage.setItem("foodBudget.v1.recover-undo."+Date.now(), raw); }catch(e){} }
+}
+function restore(budgetObj, label){
+  snapshotLive();
+  try{ localStorage.setItem(LIVE_KEY, JSON.stringify(budgetObj)); }
+  catch(e){ alert("保存に失敗しました（容量不足の可能性）: "+e); return; }
+  alert(label+"\n家計簿を "+budgetObj.entries.length+" 件に復元しました。アプリに戻ります。");
+  location.href="./";
+}
+
+var backups=collectBackups();
+
+// いまの状態
+(function(){
+  var live=null; for(var i=0;i<backups.length;i++){ if(backups[i].key===LIVE_KEY){ live=backups[i]; break; } }
+  var box=document.getElementById("liveBox");
+  if(live){ var s=live.st; box.innerHTML='現在の家計簿：<b>'+s.count+'件</b>／使った額 '+yen(s.spent)+'／累計収支 <span class="'+balClass(s.balance)+'">'+yen(s.balance)+'</span>'; }
+  else box.textContent="現在の家計簿データが見つかりません。";
+})();
+
+// 統合プレビュー
+var merged=mergeAll(backups);
+(function(){
+  var s=stats(merged);
+  document.getElementById("mergeBox").innerHTML='統合すると：<b>'+s.count+'件</b>／使った額 '+yen(s.spent)+'／累計収支 <span class="'+balClass(s.balance)+'">'+yen(s.balance)+'</span>';
+})();
+document.getElementById("mergeBtn").onclick=function(){
+  var s=stats(merged);
+  if(!confirm("全バックアップを統合して "+merged.entries.length+" 件（累計収支 "+yen(s.balance)+"）に復元します。よろしいですか？")) return;
+  restore(merged, "全バックアップを統合しました。");
+};
+
+// 一覧
+(function(){
+  var maxCount=0; for(var i=0;i<backups.length;i++){ if(backups[i].st.count>maxCount) maxCount=backups[i].st.count; }
+  var rows=document.getElementById("rows"), html="";
+  var nameOf=function(k){
+    if(k===LIVE_KEY) return "現在のデータ";
+    if(k==="foodBudget.v1.before-save") return "直前の保存";
+    if(k.indexOf("foodBudget.v1.recovery.")===0) return "退避 "+k.replace("foodBudget.v1.recovery.","");
+    if(k.indexOf("foodBudget.v1.recover-undo.")===0) return "復旧前の控え";
+    return k.replace("foodBudget.v1.","");
+  };
+  for(var n=0;n<backups.length;n++){
+    var b=backups[n], s=b.st;
+    var best=(s.count===maxCount && maxCount>0);
+    html+='<tr'+(b.key===LIVE_KEY?' class="live"':'')+'>'+
+      '<td>'+nameOf(b.key)+(b.key===LIVE_KEY?'<span class="tag">今</span>':'')+(best?'<span class="tag best">最多</span>':'')+'</td>'+
+      '<td>'+s.count+'</td><td>'+yen(s.spent)+'</td>'+
+      '<td class="'+balClass(s.balance)+'">'+yen(s.balance)+'</td>'+
+      '<td><button class="btn sec small" data-i="'+n+'">復元</button></td></tr>';
+  }
+  rows.innerHTML=html || '<tr><td colspan="5" class="note">バックアップが見つかりませんでした。</td></tr>';
+  rows.onclick=function(ev){
+    var t=ev.target; if(t.tagName!=="BUTTON") return;
+    var b=backups[+t.getAttribute("data-i")];
+    if(!confirm(nameOf(b.key)+"（"+b.st.count+"件）で家計簿を上書き復元します。よろしいですか？")) return;
+    restore(b.data, nameOf(b.key)+" から復元しました。");
+  };
+})();
+
+// ダンプ（URLトークンは伏せる）
+document.getElementById("copyBtn").onclick=function(){
+  var obj={};
+  for(var i=0;i<backups.length;i++){
+    var d=JSON.parse(JSON.stringify(backups[i].data));
+    if(d.syncUrl) d.syncUrl="(hidden)"; if(d.apiUrl) d.apiUrl="(hidden)";
+    obj[backups[i].key]={ count:backups[i].st.count, spent:backups[i].st.spent, balance:backups[i].st.balance, data:d };
+  }
+  var text=JSON.stringify(obj,null,1);
+  var ta=document.getElementById("dump"); ta.value=text;
+  try{ ta.select(); document.execCommand("copy"); }catch(e){}
+  if(navigator.clipboard){ navigator.clipboard.writeText(text).catch(function(){}); }
+  alert("コピーしました。チャットに貼り付けてください。");
+};
+</script>
+</body>
+</html>

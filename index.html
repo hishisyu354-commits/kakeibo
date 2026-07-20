@@ -346,7 +346,7 @@ const PRO_HASH = "00fc8f3b6a9d65231e5e04baf5ed28a21dc447d5cc7c9d426a9e83b2d1568c
 const BOOTH_URL = "https://booth.pm/";   // ←出品後、自分のPro版商品URLに差し替え
 // ↓ 公開・計測用（空なら無効。あとから貼るだけ）
 const FEEDBACK_URL = "";   // ←Googleフォーム等の感想URL。設定すると「感想・要望を送る」ボタンが出る
-const GC_CODE = "";        // ←GoatCounterのサイトコード（"xxx"→ https://xxx.goatcounter.com）。空なら計測しない・プライバシー配慮(Cookieなし)
+const GC_CODE = "kakeibo-hs";   // GoatCounter（https://kakeibo-hs.goatcounter.com）。空なら計測しない・Cookieなし
 const WELCOME_KEY = "kakeibo.welcomed.v2";
 const validCook = (v, list) => (typeof v==="string" && list.indexOf(v)>=0) ? v : "";
 const defaultCookFilter = () => ({ meal:"", genre:"" });

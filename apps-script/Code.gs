@@ -162,6 +162,7 @@ function doPost(e){
       else if(action === 'receipt') out = { ok:true, receipt: extractReceipt_(body.image, body.mime, body.today) };
       else if(action === 'recipes') out = { ok:true, recipes: suggestRecipes_(body.items, body.meal, body.genre) };
       else if(action === 'recipe')  out = { ok:true, recipe: recipeDetail_(body.name, body.uses, body.buy) };
+      else if(action === 'itemsFromText') out = { ok:true, items: extractItemsFromText_(body.text) };
       else if(action === 'pantry')  out = savePantry_(body.items, body.notifyDays);
       else if(action === 'ping')    out = { ok:true, gemini: geminiConfigured_() };
       else out = { ok:false, error:'unknown action' };
@@ -269,6 +270,30 @@ function extractReceipt_(imageB64, mime, todayStr){
 var COOK_MEALS_ = ['朝','昼','夜','おやつ','夜食'];
 var COOK_GENRES_ = ['和食','洋食','中華','エスニック','麺・丼','スープ','サラダ・副菜'];
 function whitelist_(v, list){ return (typeof v === 'string' && list.indexOf(v) >= 0) ? v : ''; }
+
+/** 声/文章から食材名だけを抽出する（音声まとめ追加用）。数量・助詞・調理表現を落として短い名詞にする。 */
+function extractItemsFromText_(text){
+  var t = String(text || '').slice(0, 2000).trim();
+  if(!t) return [];
+  var prompt =
+    'これは冷蔵庫に入れる食材を声で読み上げた文章です。含まれる「食材名」だけを抜き出してください。\n' +
+    '文章:「' + t + '」\n' +
+    '- 数量・単位・助詞・「買った」等の動詞は除き、一般的で短い食材名にする（例:「牛乳を2本」→「牛乳」）\n' +
+    '- 塩・砂糖など常備調味料や食品でない語は除く\n' +
+    '- 重複はまとめる。最大50個。\n' +
+    '次のJSONだけを返す: {"items":[string]}';
+  var out = geminiJson_([{ text: prompt }]);
+  var arr = Array.isArray(out.items) ? out.items : [];
+  var seen = {}, res = [];
+  for(var i = 0; i < arr.length; i++){
+    if(typeof arr[i] !== 'string') continue;
+    var n = arr[i].trim().slice(0, 40);
+    if(!n || seen[n]) continue;
+    seen[n] = true; res.push(n);
+    if(res.length >= 50) break;
+  }
+  return res;
+}
 
 function suggestRecipes_(items, meal, genre){
   if(!Array.isArray(items) || !items.length) throw new Error('在庫が空です');

@@ -183,12 +183,13 @@ details.day>div.entries{ padding:2px 13px 12px; border-top:1px solid var(--line)
 
 /* form fields */
 .field{ display:block; font-size:13px; font-weight:600; color:var(--sub); margin-top:12px; }
-.field input,.field select{
+.field input,.field select,.field textarea{
   display:block; width:100%; margin-top:5px; font-size:16px; color:var(--ink);
   border:1px solid var(--line); border-radius:10px; padding:11px 12px; background:#fff;
   -webkit-appearance:none; appearance:none;
 }
-.field input:focus,.field select:focus{ outline:2px solid var(--green); border-color:var(--green); }
+.field textarea{ resize:vertical; min-height:56px; font-family:inherit; line-height:1.5; }
+.field input:focus,.field select:focus,.field textarea:focus{ outline:2px solid var(--green); border-color:var(--green); }
 
 /* modal */
 .overlay{
@@ -271,6 +272,7 @@ a{ color:var(--green); }
 }
 :root[data-theme="dark"] .field input,
 :root[data-theme="dark"] .field select,
+:root[data-theme="dark"] .field textarea,
 :root[data-theme="dark"] .item .act{ background:#262d34; }
 :root[data-theme="dark"] .item .act.aff{ background:#262d34; border-color:#5c3b3b; color:#ff8a80; }
 :root[data-theme="dark"] .sheet,
@@ -771,6 +773,7 @@ function renderStock(){
     '<button class="btn secondary" data-action="manualAdd">＋ 手入力</button>'+
   '</div>';
   html+='<button class="btn secondary" data-action="receiptAdd" style="margin-top:8px">🧾 レシートで追加（食材＋食費をまとめて記録）</button>';
+  html+='<button class="btn secondary" data-action="voiceAdd" style="margin-top:8px">🎤 声でまとめて追加（期限は後から）</button>';
   html+='<div class="section-title">在庫（'+list.length+'）</div>';
   html+= list.length
     ? list.map(it=>itemRow(it,"stock")).join("")
@@ -1012,8 +1015,43 @@ function addItem(name, expiry, kind){
   schedulePantrySync(); render();
   return true;
 }
+// 名前の正規化（前後空白・全半角スペースを無視して同一判定）
+function normName(s){ return String(s||"").trim().replace(/\s+/g,"").toLowerCase(); }
+// 買い物リスト（out）に同名が複数あれば1つに統合する。統合したら true
+function mergeOutDuplicates(){
+  const seen=new Map(); const keep=[]; let changed=false;
+  for(const it of state.items){
+    if(it.state!=="out"){ keep.push(it); continue; }
+    const k=normName(it.name);
+    if(!k){ keep.push(it); continue; }
+    if(seen.has(k)){
+      const prev=seen.get(k);
+      if((it.outAt||0)>(prev.outAt||0)) prev.outAt=it.outAt;   // 新しい方の時刻を残す
+      changed=true;   // 重複は捨てる
+    }else{ seen.set(k,it); keep.push(it); }
+  }
+  if(changed) state.items=keep;
+  return changed;
+}
 function markOut(id){
   const it=state.items.find(i=>i.id===id); if(!it) return;
+  // 既に買い物リストに同名がある場合は重複を作らず、この在庫は消費済みとして削除する
+  const dup=state.items.find(i=>i.state==="out" && i.id!==id && normName(i.name)===normName(it.name));
+  if(dup){
+    const idx=state.items.indexOf(it);
+    state.items.splice(idx,1);
+    if(!save()){ state.items.splice(idx,0,it); return; }
+    schedulePantrySync(); render();
+    const gen=stateGen;
+    toast("「"+it.name+"」は買い物リストにあります（在庫から削除）", { label:"元に戻す", fn:()=>{
+      if(gen!==stateGen) return;
+      if(state.items.length>=500){ toast("上限（500件）のため戻せませんでした"); return; }
+      state.items.splice(Math.min(idx,state.items.length),0,it);
+      if(save()){ schedulePantrySync(); render(); }
+      else { const j=state.items.indexOf(it); if(j>=0) state.items.splice(j,1); render(); }
+    }});
+    return;
+  }
   it.state="out"; it.outAt=Date.now();
   if(!save()){ it.state="stock"; it.outAt=0; return; }
   schedulePantrySync(); render();
@@ -1068,12 +1106,65 @@ function manualAddSheet(){
   };
   el("fCancel").onclick=closeSheet;
 }
+// 話した/入力したテキストを食材名の配列にする（区切り分割＋末尾の数量・助詞を軽く除去）
+function parseSpokenItems(text){
+  return String(text||"")
+    .replace(/[。｡]/g,"、")
+    .split(/[、,，･・\/／\n\r\t]+|\s{1,}/)
+    .map(s=>s.trim())
+    .map(s=>s.replace(/\s*\d+\s*(?:本|個|袋|パック|枚|杯|缶|玉|株|房|尾|匹|ｇ|g|グラム|kg|㎏|ml|㎖|l|ℓ|リットル|箱|ケース|束|パ|コ)?\s*$/i,"").trim())
+    .map(s=>s.replace(/を$/,"").trim())   // 末尾「を」だけ除去（「じゃがいも」等の名前を壊さないため他の助詞は触らない）
+    .filter(s=>s && s.length<=40)
+    .filter((s,i,a)=>a.indexOf(s)===i)   // 重複除去
+    .slice(0,50);
+}
+function voiceAddSheet(){
+  openSheet(
+    '<h2>声でまとめて追加</h2>'+
+    '<p class="note">下の欄をタップ → <b>キーボードの🎤マイク</b>で食材を区切って話してください（例：牛乳、卵、豚こま肉、キャベツ）。手入力でもOK。<b>期限なしで登録</b>され、あとから各食材をタップして期限を追加できます。</p>'+
+    '<label class="field">食材（音声・手入力）<textarea id="vText" rows="4" placeholder="牛乳、卵、豚こま肉、キャベツ、玉ねぎ"></textarea></label>'+
+    '<div id="vPreview" class="note" style="margin-top:2px"></div>'+
+    '<button class="btn" id="vAdd">この内容で追加</button>'+
+    '<button class="btn secondary" id="vCancel">キャンセル</button>'
+  );
+  const ta=el("vText");
+  const upd=()=>{ const items=parseSpokenItems(ta.value); el("vPreview").innerHTML = items.length ? "追加する食材（"+items.length+"）：<b>"+items.map(esc).join("、")+"</b>" : "（まだ食材がありません）"; };
+  ta.addEventListener("input", upd); upd();
+  el("vAdd").onclick=async()=>{
+    const btn=el("vAdd");
+    let names=parseSpokenItems(ta.value);
+    // AI連携があれば、より賢く食材名を抽出（自然な話し方にも対応）。失敗時はローカル解析結果を使う
+    if(state.apiUrl && ta.value.trim()){
+      btn.disabled=true; btn.innerHTML='<span class="spinner"></span>整理中…';
+      try{
+        const res=await api({ action:"itemsFromText", text:ta.value.slice(0,2000) }, 30000);
+        const ai=Array.isArray(res.items) ? res.items.filter(x=>typeof x==="string" && x.trim()).map(x=>x.trim().slice(0,40)).filter((s,i,a)=>a.indexOf(s)===i).slice(0,50) : [];
+        if(ai.length) names=ai;
+      }catch(e){ /* ローカル結果のまま続行 */ }
+      btn.disabled=false; btn.textContent="この内容で追加";
+    }
+    if(!names.length){ toast("食材が読み取れませんでした。区切って入力してみてください"); return; }
+    const before=state.items.length;
+    const added=addItemsBulk(names);
+    if(added && !save()){ state.items.length=before; toast("保存できませんでした（端末の空き容量をご確認ください）"); return; }
+    closeSheet();
+    if(added){ schedulePantrySync(); render(); toast(added+"件を追加しました（各食材をタップで期限を追加できます）"); }
+    else toast("追加できる食材がありませんでした");
+  };
+  el("vCancel").onclick=closeSheet;
+  setTimeout(()=>{ try{ ta.focus(); }catch(e){} }, 60);
+}
 function editSheet(id){
   const it=state.items.find(i=>i.id===id); if(!it) return;
   openSheet(
     '<h2>編集</h2>'+
     '<label class="field">名前<input id="fName" type="text" maxlength="40" value="'+esc(it.name)+'"></label>'+
     '<label class="field">期限<input id="fExp" type="date" value="'+(it.expiry||"")+'"></label>'+
+    '<label class="field">種別<select id="fKind">'+
+      '<option value="">（未指定）</option>'+
+      '<option value="賞味期限"'+(it.kind==="賞味期限"?" selected":"")+'>賞味期限</option>'+
+      '<option value="消費期限"'+(it.kind==="消費期限"?" selected":"")+'>消費期限</option>'+
+    '</select></label>'+
     '<button class="btn" id="fSave">保存</button>'+
     '<button class="btn secondary" id="fPhoto">📷 写真で期限を読み直す</button>'+
     '<button class="btn danger" id="fDel">この食材を削除</button>'+
@@ -1084,9 +1175,12 @@ function editSheet(id){
     if(!name){ toast("名前を入れてください"); return; }
     const exp=el("fExp").value||null;
     if(exp && !isValidDate(exp)){ toast("日付が正しくありません"); return; }
+    const kv=el("fKind").value;
+    const kind=(kv==="賞味期限"||kv==="消費期限") ? kv : null;
     const prev={name:it.name, expiry:it.expiry, kind:it.kind};
     it.name=name;
-    if(exp!==it.expiry){ it.expiry=exp; it.kind=null; }   // 期限を変えたら旧種別を引きずらない
+    it.expiry=exp;
+    it.kind=exp ? kind : null;   // 期限が無ければ種別も無し
     if(!save()){ Object.assign(it,prev); return; }
     schedulePantrySync(); closeSheet(); render(); toast("保存しました");
   };
@@ -1223,7 +1317,10 @@ function sanitizeReceipt(r){
   if(!r || typeof r!=="object" || Array.isArray(r)) return null;
   const store = typeof r.store==="string" ? r.store.slice(0,40) : "";
   const date = (typeof r.date==="string" && isValidDate(r.date)) ? r.date : "";
-  const total = (typeof r.total==="number" && isFinite(r.total) && r.total>0) ? Math.round(r.total) : 0;
+  // 合計金額は数値でも文字列("1,685"や"¥1685円")でも受け取れるように数値化する
+  const totalNum = typeof r.total==="number" ? r.total
+    : (typeof r.total==="string" ? Number(r.total.replace(/[,，\s円¥￥]/g,"")) : NaN);
+  const total = (isFinite(totalNum) && totalNum>0) ? Math.round(totalNum) : 0;
   const items = Array.isArray(r.items) ? r.items.filter(x=>typeof x==="string" && x.trim()).map(x=>x.trim().slice(0,40)).slice(0,30) : [];
   return { store, date, total, items };
 }
@@ -1277,7 +1374,8 @@ function confirmReceiptSheet(rc){
     // 2) 食費家計簿に合計を記録（同額同日は重複回避）
     let money=false, dupMoney=false;
     if(hasMoney){
-      const memo=(store?store+"：":"")+(chosen.length?chosen.slice(0,5).join("、")+(chosen.length>5?" ほか":""):"レシート");
+      // メモ欄に明細（店名＋買った食材）を入れる。addBudgetExpense側で100字に丸められる
+      const memo=(store?store+"：":"")+(chosen.length?chosen.join("、"):"レシート");
       const st=addBudgetExpense(d, total, memo);
       money = st==="added";
       dupMoney = st==="dup";
@@ -1858,6 +1956,7 @@ document.addEventListener("click", e=>{
   else if(a==="receiptAdd") startPhoto({ mode:"receipt" });
   else if(a==="scanExp") startPhoto({ mode:"update", id:b.dataset.id });
   else if(a==="manualAdd") manualAddSheet();
+  else if(a==="voiceAdd") voiceAddSheet();
   else if(a==="out") markOut(b.dataset.id);
   else if(a==="bought") restockSheet(b.dataset.id);
   else if(a==="edit") editSheet(b.dataset.id);
@@ -1903,6 +2002,7 @@ window.addEventListener("focus", onWake);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) onWake(); });
 
 /* ---------- init ---------- */
+if(mergeOutDuplicates()) save();   // 既存の買い物リストの同名重複を1つに統合
 if(!state.apiUrl && budget.syncUrl){ state.apiUrl=budget.syncUrl; save(); }
 if(!budget.syncUrl && state.apiUrl){ budget.syncUrl=state.apiUrl; saveBudget(); }
 if(!budget.startDate){ budget.startDate=DEFAULT_START; saveBudget(); }

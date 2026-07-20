@@ -1,0 +1,3 @@
+# Code.gs と appsscript.json だけを push する（ビルドスクリプト・ドキュメントは対象外）
+build.js
+**/*.md

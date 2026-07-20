@@ -163,6 +163,7 @@ function doPost(e){
       else if(action === 'recipes') out = { ok:true, recipes: suggestRecipes_(body.items, body.meal, body.genre) };
       else if(action === 'recipe')  out = { ok:true, recipe: recipeDetail_(body.name, body.uses, body.buy) };
       else if(action === 'itemsFromText') out = { ok:true, items: extractItemsFromText_(body.text) };
+      else if(action === 'recipeHelp') out = { ok:true, help: recipeHelp_(body.name, body.ings, body.stock) };
       else if(action === 'pantry')  out = savePantry_(body.items, body.notifyDays);
       else if(action === 'ping')    out = { ok:true, gemini: geminiConfigured_() };
       else out = { ok:false, error:'unknown action' };
@@ -293,6 +294,32 @@ function extractItemsFromText_(text){
     if(res.length >= 50) break;
   }
   return res;
+}
+
+/** お気に入り料理の不足材料と代用案を返す（在庫と付き合わせる）。 */
+function recipeHelp_(name, ings, stock){
+  var clean = function(a, n){ return (Array.isArray(a) ? a : []).filter(function(x){ return typeof x==='string' && x.trim(); }).map(function(x){ return x.trim().slice(0,40); }).slice(0, n); };
+  var ingList = clean(ings, 30);
+  var stockList = clean(stock, 60);
+  if(!ingList.length) throw new Error('材料がありません');
+  var prompt =
+    '料理「' + String(name||'').slice(0,60) + '」を作ります。\n' +
+    '必要な材料: ' + ingList.join('、') + '\n' +
+    '今ある在庫: ' + (stockList.join('、') || '（なし）') + '\n' +
+    '在庫に無い（不足している）材料を挙げ、その代用案（在庫にある物や一般家庭で代わりになりがちな物）を提案してください。\n' +
+    '次のJSONだけを返す: {"missing":[string],"subs":[{"missing":string,"alt":string}]}';
+  var out = geminiJson_([{ text: prompt }]);
+  var missing = clean(out.missing, 20);
+  var subs = [];
+  if(Array.isArray(out.subs)){
+    for(var i = 0; i < out.subs.length && subs.length < 20; i++){
+      var s = out.subs[i] || {};
+      if(typeof s.missing==='string' && typeof s.alt==='string' && s.missing.trim() && s.alt.trim()){
+        subs.push({ missing: s.missing.trim().slice(0,40), alt: s.alt.trim().slice(0,80) });
+      }
+    }
+  }
+  return { missing: missing, subs: subs };
 }
 
 function suggestRecipes_(items, meal, genre){

@@ -150,7 +150,11 @@ details.day>div.entries{ padding:2px 13px 12px; border-top:1px solid var(--line)
 .recipe:first-of-type{ border-top:none; }
 .recipe:active{ background:#f3f6f1; }
 .recipe .r-name{ font-size:15.5px; font-weight:700; }
-.recipe .r-go{ float:right; color:var(--green); font-size:12.5px; font-weight:700; margin-left:8px; }
+.recipe .r-head{ display:flex; align-items:center; gap:8px; }
+.recipe .r-title{ flex:1; min-width:0; font-size:15.5px; font-weight:700; }
+.recipe .r-go{ color:var(--green); font-size:12.5px; font-weight:700; flex-shrink:0; }
+.fav-star{ flex-shrink:0; border:none; background:none; cursor:pointer; font-size:21px; line-height:1; padding:0 2px; color:#e6a700; }
+.wish-text{ white-space:pre-wrap; word-break:break-word; font-size:13.5px; line-height:1.7; border:1px solid var(--line); border-radius:10px; padding:12px; max-height:52vh; overflow:auto; }
 .recipe .r-uses{ font-size:12.5px; color:var(--sub); margin-top:3px; }
 .recipe .r-buy{ font-size:12.5px; margin-top:3px; color:#a05a00; font-weight:600; }
 .recipe .r-how{ font-size:13px; margin-top:5px; line-height:1.6; }
@@ -332,6 +336,7 @@ const BUDGET_RECOVERY_KEYS = [
 const el = id => document.getElementById(id);
 let currentTab = "budget";
 let budgetView = "today";
+let cookScreen = "suggest";   // "suggest"（提案） | "faves"（お気に入り・作りたい）
 let budgetRecoveredOnLoad = null;
 const COOK_MEALS = ["朝","昼","夜","おやつ","夜食"];
 const COOK_GENRES = ["和食","洋食","中華","エスニック","麺・丼","スープ","サラダ・副菜"];
@@ -354,7 +359,7 @@ function rakutenUrl(keyword){
 }
 function load(){
   try{ const raw=localStorage.getItem(KEY); if(raw) return sanitize(JSON.parse(raw)); }catch(e){}
-  return { items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0, pro:false, theme:"default", cookPick:[] };
+  return { items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0, pro:false, theme:"default", cookPick:[], favorites:[], wishlist:[] };
 }
 function save(){
   try{ localStorage.setItem(KEY, JSON.stringify(state)); return true; }
@@ -363,7 +368,7 @@ function save(){
 function sanitize(o){
   // バックアップとして解釈できないものは例外（誤ファイルでデータを消さないため）
   if(!o || typeof o!=="object" || Array.isArray(o) || !Array.isArray(o.items)) throw new Error("not a valid backup");
-  const out = { items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0, pro:false, theme:"default", cookPick:[] };
+  const out = { items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0, pro:false, theme:"default", cookPick:[], favorites:[], wishlist:[] };
   const cf = o.cookFilter;
   if(cf && typeof cf==="object" && !Array.isArray(cf)){
     out.cookFilter = { meal:validCook(cf.meal, COOK_MEALS), genre:validCook(cf.genre, COOK_GENRES) };
@@ -376,6 +381,8 @@ function sanitize(o){
   out.pro = o.pro===true;
   if(typeof o.theme==="string" && THEMES.indexOf(o.theme)>=0) out.theme=o.theme;
   if(Array.isArray(o.cookPick)) out.cookPick = o.cookPick.filter(x=>typeof x==="string" && x).slice(0,500);
+  if(Array.isArray(o.favorites)) out.favorites = o.favorites.map(sanitizeFav).filter(Boolean).slice(0,300);
+  if(Array.isArray(o.wishlist)) out.wishlist = o.wishlist.map(sanitizeWish).filter(Boolean).slice(0,300);
   const seen=new Set();
   for(const it of o.items){
     if(!it || typeof it.name!=="string" || !it.name.trim()) continue;
@@ -491,6 +498,29 @@ function sanitizeRecipes(r){
     buyMore:Array.isArray(r.buyMore) ? r.buyMore.slice(0,6).map(x=>rec(x,true)).filter(x=>x.name) : []
   };
   return (out.canMake.length||out.buyMore.length) ? out : null;
+}
+function sanitizeFav(f){
+  if(!f || typeof f!=="object" || Array.isArray(f)) return null;
+  const name = typeof f.name==="string" ? f.name.trim().slice(0,60) : "";
+  if(!name) return null;
+  const strArr=(a,n)=> Array.isArray(a) ? a.filter(x=>typeof x==="string" && x.trim()).map(x=>x.trim().slice(0,40)).slice(0,n) : [];
+  return {
+    id:(typeof f.id==="string" && f.id) ? f.id : uid(),
+    name,
+    uses:strArr(f.uses,20),
+    buy:strArr(f.buy,20),
+    how:typeof f.how==="string" ? f.how.slice(0,300) : "",
+    detail:sanitizeDetail(f.detail),
+    savedAt:(typeof f.savedAt==="number" && isFinite(f.savedAt)) ? f.savedAt : 0
+  };
+}
+function sanitizeWish(w){
+  if(!w || typeof w!=="object" || Array.isArray(w)) return null;
+  const text=typeof w.text==="string" ? w.text.slice(0,8000) : "";
+  if(!text.trim()) return null;
+  const auto=(text.split(/\n/).find(l=>l.trim())||"貼り付けレシピ").trim().slice(0,80);
+  const title=(typeof w.title==="string" && w.title.trim()) ? w.title.trim().slice(0,80) : auto;
+  return { id:(typeof w.id==="string" && w.id) ? w.id : uid(), title, text, savedAt:(typeof w.savedAt==="number" && isFinite(w.savedAt)) ? w.savedAt : 0 };
 }
 let state = load();
 let budget = loadBudget();
@@ -796,7 +826,158 @@ function cookOptions(list, sel){
   return '<option value=""'+(sel?"":" selected")+'>指定なし</option>'+
     list.map(v=>'<option value="'+esc(v)+'"'+(sel===v?" selected":"")+'>'+esc(v)+'</option>').join("");
 }
+/* ---------- favorites / wishlist ---------- */
+function favIndex(name){ return (state.favorites||[]).findIndex(f=>normName(f.name)===normName(name)); }
+function isFav(name){ return favIndex(name)>=0; }
+function makeFav(r, detail){
+  return { id:uid(), name:String(r.name||"").slice(0,60), uses:(r.uses||[]).slice(0,20), buy:(r.buy||[]).slice(0,20),
+           how:String(r.how||"").slice(0,300), detail:detail||null, savedAt:Date.now() };
+}
+function toggleFav(r, detail){
+  if(!Array.isArray(state.favorites)) state.favorites=[];
+  const i=favIndex(r.name);
+  if(i>=0){ state.favorites.splice(i,1); save(); toast("お気に入りから外しました"); }
+  else { state.favorites.unshift(makeFav(r, detail)); save(); toast("お気に入りに追加しました ⭐️"); }
+}
+function favTogCard(list, idx){
+  const r=state.lastRecipes && state.lastRecipes[list] && state.lastRecipes[list][idx];
+  if(!r) return;
+  toggleFav(r, detailCache[list+":"+idx]||null);
+  if(currentTab==="cook") renderCook();
+}
+function recipeIngredients(f){
+  const seen=new Set(), out=[];
+  for(const n of [...(f.uses||[]), ...(f.buy||[])]){ const k=normName(n); if(n && !seen.has(k)){ seen.add(k); out.push(n); } }
+  return out;
+}
+function inStock(name){
+  const nn=normName(name); if(!nn) return false;
+  return stockItems().some(i=>{ const s=normName(i.name); return s===nn || s.includes(nn) || nn.includes(s); });
+}
+function missingItems(names){ return names.filter(n=>!inStock(n)); }
+function addMissingToShopping(names){
+  let added=0;
+  for(const n of names){
+    if(state.items.length>=500) break;
+    const nm=String(n||"").trim().slice(0,40); if(!nm) continue;
+    if(state.items.some(i=>i.state==="out" && normName(i.name)===normName(nm))) continue;   // 既に買い物リストにある
+    state.items.push({ id:uid(), name:nm, expiry:null, kind:null, state:"out", addedAt:Date.now(), outAt:Date.now() });
+    added++;
+  }
+  if(added) save();
+  return added;
+}
+function renderFaves(){
+  const favs=state.favorites||[], ws=state.wishlist||[];
+  let html='<button class="btn secondary" data-action="cookScreen" data-screen="suggest" style="margin-bottom:10px">← 料理の提案に戻る</button>';
+  html+='<div class="section-title">⭐️ お気に入り（'+favs.length+'）</div>';
+  if(favs.length){
+    html+='<div class="card">'+favs.map(f=>{
+      const miss=missingItems(recipeIngredients(f));
+      const line=miss.length
+        ? '<div class="r-buy">🛒 足りない：'+esc(miss.join("、"))+'</div>'
+        : '<div class="r-uses" style="color:var(--green)">✅ 今ある食材で作れます</div>';
+      return '<div class="recipe" data-action="favOpen" data-id="'+esc(f.id)+'" role="button" tabindex="0">'+
+        '<div class="r-head">'+
+          '<button class="fav-star" data-action="favDel" data-id="'+esc(f.id)+'" aria-label="お気に入りから外す">★</button>'+
+          '<span class="r-title">'+esc(f.name)+'</span><span class="r-go">詳しく ›</span>'+
+        '</div>'+
+        (f.how?'<div class="r-how">'+esc(f.how)+'</div>':"")+ line +
+      '</div>';
+    }).join("")+'</div>';
+  } else {
+    html+='<div class="empty">まだお気に入りがありません。<br>提案された料理の☆を押すと、ここに集まります。</div>';
+  }
+  html+='<div class="section-title">📎 作ってみたい料理（'+ws.length+'）</div>';
+  html+='<button class="btn secondary" data-action="wishAdd" style="margin-bottom:8px">＋ レシピを貼り付けて保存（インスタ等）</button>';
+  if(ws.length){
+    html+='<div class="card">'+ws.map(w=>
+      '<div class="recipe" data-action="wishOpen" data-id="'+esc(w.id)+'" role="button" tabindex="0">'+
+        '<div class="r-head"><span class="r-title">'+esc(w.title)+'</span><span class="r-go">開く ›</span></div>'+
+        '<div class="r-how" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(w.text.replace(/\s+/g," ").slice(0,60))+'</div>'+
+      '</div>').join("")+'</div>';
+  } else {
+    html+='<div class="empty">気になったレシピを貼り付けて貯められます。<br>インスタや調べたレシピをコピー →「＋ レシピを貼り付け」</div>';
+  }
+  el("tab-cook").innerHTML=html;
+}
+function showFavDetail(id){
+  const f=(state.favorites||[]).find(x=>x.id===id); if(!f) return;
+  const ings=recipeIngredients(f), miss=missingItems(ings);
+  let h='<h2>'+esc(f.name)+'</h2>';
+  if(f.how) h+='<p class="note">'+esc(f.how)+'</p>';
+  if(ings.length){
+    h+='<div class="section-title">材料</div><ul class="d-ing">'+ings.map(n=>
+      '<li><span>'+esc(n)+'</span><span class="amt">'+(inStock(n)?'✅ あり':'🛒 なし')+'</span></li>').join("")+'</ul>';
+  }
+  if(f.detail && f.detail.steps && f.detail.steps.length){
+    h+='<div class="section-title">作り方</div><ol class="d-steps">'+f.detail.steps.map(s=>'<li>'+esc(s)+'</li>').join("")+'</ol>';
+    if(f.detail.tips) h+='<div class="d-tips">💡 '+esc(f.detail.tips)+'</div>';
+  }
+  if(miss.length) h+='<div class="d-buy" style="margin-top:8px">足りない：'+esc(miss.join("、"))+'</div>';
+  h+='<div id="subsBox" class="note" style="margin-top:8px"></div>';
+  h+='<div class="btn-row" style="margin-top:12px">'+
+     (miss.length?'<button class="btn secondary" id="favShop">🛒 不足を買い物リストへ</button>':'')+
+     (miss.length && state.apiUrl?'<button class="btn secondary" id="favSubs">🤖 代用案を見る</button>':'')+
+     '</div>';
+  h+='<div class="btn-row" style="margin-top:8px"><button class="btn danger" id="favDelBtn">お気に入りから外す</button>'+
+     '<button class="btn secondary" data-action="closeSheet">閉じる</button></div>';
+  const ov=openSheet(h);
+  const shop=ov.querySelector("#favShop");
+  if(shop) shop.onclick=()=>{ const n=addMissingToShopping(miss); closeSheet(); render(); toast(n?n+"件を買い物リストへ追加しました":"追加できる食材がありませんでした"); };
+  const del=ov.querySelector("#favDelBtn");
+  if(del) del.onclick=()=>{ const i=favIndex(f.name); if(i>=0){ state.favorites.splice(i,1); save(); } closeSheet(); renderCook(); toast("お気に入りから外しました"); };
+  const subs=ov.querySelector("#favSubs");
+  if(subs) subs.onclick=()=>fetchSubs(f, ov);
+}
+async function fetchSubs(f, ov){
+  const box=ov.querySelector("#subsBox"), btn=ov.querySelector("#favSubs");
+  if(!state.apiUrl){ if(box) box.textContent="AI連携を設定すると代用案を出せます"; return; }
+  if(btn){ btn.disabled=true; btn.innerHTML='<span class="spinner"></span>考え中…'; }
+  try{
+    const res=await api({ action:"recipeHelp", name:f.name, ings:recipeIngredients(f), stock:stockItems().map(i=>i.name) }, 60000);
+    const subs=(res.help && Array.isArray(res.help.subs)) ? res.help.subs : [];
+    if(box) box.innerHTML = subs.length
+      ? '<b>代用案：</b><br>'+subs.map(s=>esc(s.missing)+" → "+esc(s.alt)).join("<br>")
+      : "よい代用案は見つかりませんでした";
+  }catch(e){ if(box) box.textContent="代用案を取得できませんでした（"+shortErr(e)+"）"; }
+  finally{ if(btn){ btn.disabled=false; btn.textContent="🤖 代用案を見る"; } }
+}
+function wishAddSheet(){
+  openSheet(
+    '<h2>作ってみたい料理を保存</h2>'+
+    '<p class="note">インスタや調べたレシピを<b>コピーして貼り付け</b>てください。最初の行が自動でタイトルになります。</p>'+
+    '<label class="field">レシピ（貼り付け）<textarea id="wText" rows="7" placeholder="（ここにレシピを貼り付け）"></textarea></label>'+
+    '<label class="field">タイトル（任意・空なら自動）<input id="wTitle" type="text" maxlength="80"></label>'+
+    '<button class="btn" id="wSave">保存</button>'+
+    '<button class="btn secondary" id="wCancel">キャンセル</button>'
+  );
+  el("wSave").onclick=()=>{
+    const text=(el("wText").value||"").trim();
+    if(!text){ toast("レシピを貼り付けてください"); return; }
+    const t=(el("wTitle").value||"").trim();
+    const title=(t || text.split(/\n/).find(l=>l.trim()) || "貼り付けレシピ").trim().slice(0,80);
+    if(!Array.isArray(state.wishlist)) state.wishlist=[];
+    const w={ id:uid(), title, text:text.slice(0,8000), savedAt:Date.now() };
+    state.wishlist.unshift(w);
+    if(!save()){ state.wishlist.shift(); toast("保存できませんでした（空き容量をご確認ください）"); return; }
+    closeSheet(); renderCook(); toast("「作ってみたい料理」に追加しました");
+  };
+  el("wCancel").onclick=closeSheet;
+  setTimeout(()=>{ try{ el("wText").focus(); }catch(e){} }, 60);
+}
+function showWishDetail(id){
+  const w=(state.wishlist||[]).find(x=>x.id===id); if(!w) return;
+  const h='<h2>'+esc(w.title)+'</h2>'+
+    '<div class="wish-text">'+esc(w.text)+'</div>'+
+    '<div class="btn-row" style="margin-top:12px"><button class="btn danger" id="wDelBtn">削除</button>'+
+    '<button class="btn secondary" data-action="closeSheet">閉じる</button></div>';
+  const ov=openSheet(h);
+  const del=ov.querySelector("#wDelBtn");
+  if(del) del.onclick=()=>{ const i=(state.wishlist||[]).findIndex(x=>x.id===id); if(i>=0){ state.wishlist.splice(i,1); save(); } closeSheet(); renderCook(); toast("削除しました"); };
+}
 function renderCook(){
+  if(cookScreen==="faves"){ renderFaves(); return; }
   const st=stockItems();
   const cf=state.cookFilter || defaultCookFilter();
   // 「メニューに含める食材」＝在庫の中から選んだIDのうち、今も在庫にあるものだけ
@@ -813,7 +994,9 @@ function renderCook(){
       '</div>'
     : "";
   const suggestLabel = picked.length ? "🍳 選んだ"+picked.length+"品で提案" : "🍳 この在庫で提案してもらう";
-  let html='<div class="card"><p class="note">いまの在庫（'+st.length+'品）から、一人暮らしで作りやすい料理をAIが提案します。<b>塩・砂糖・醤油・味噌・油などの基本調味料は常備している前提</b>です。</p>'+
+  const favN=(state.favorites||[]).length, wishN=(state.wishlist||[]).length;
+  let html='<button class="btn secondary" data-action="cookScreen" data-screen="faves" style="margin-bottom:10px">⭐️ お気に入り・作ってみたい料理'+((favN+wishN)?'（'+(favN+wishN)+'）':'')+' ›</button>';
+  html+='<div class="card"><p class="note">いまの在庫（'+st.length+'品）から、一人暮らしで作りやすい料理をAIが提案します。<b>塩・砂糖・醤油・味噌・油などの基本調味料は常備している前提</b>です。</p>'+
     '<div class="filter-row">'+
       '<label class="field">いつ食べる<select id="fMeal">'+cookOptions(COOK_MEALS, cf.meal)+'</select></label>'+
       '<label class="field">ジャンル<select id="fGenre">'+cookOptions(COOK_GENRES, cf.genre)+'</select></label>'+
@@ -826,7 +1009,10 @@ function renderCook(){
   const r=state.lastRecipes;
   if(r){
     const card=(list,x,i)=>'<div class="recipe" data-action="detail" data-list="'+list+'" data-idx="'+i+'" role="button" tabindex="0">'+
-      '<div class="r-name"><span class="r-go">作り方 ›</span>'+esc(x.name)+'</div>'+
+      '<div class="r-head">'+
+        '<button class="fav-star" data-action="favTog" data-list="'+list+'" data-idx="'+i+'" aria-label="お気に入り登録">'+(isFav(x.name)?"★":"☆")+'</button>'+
+        '<span class="r-title">'+esc(x.name)+'</span><span class="r-go">作り方 ›</span>'+
+      '</div>'+
       (x.uses.length?'<div class="r-uses">使う食材：'+esc(x.uses.join("、"))+'</div>':"")+
       (list==="buyMore"&&x.buy.length?'<div class="r-buy">＋ 買い足し：'+esc(x.buy.join("、"))+'</div>':"")+
       (x.how?'<div class="r-how">'+esc(x.how)+'</div>':"")+
@@ -1515,8 +1701,15 @@ function showDetailSheet(r, d){
       d.steps.map(s=>'<li>'+esc(s)+'</li>').join("")+'</ol>';
   }
   if(d.tips) h+='<div class="d-tips">💡 '+esc(d.tips)+'</div>';
-  h+='<div class="btn-row" style="margin-top:14px"><button class="btn secondary" data-action="closeSheet">閉じる</button></div>';
-  openSheet(h);
+  h+='<div class="btn-row" style="margin-top:14px">'+
+     '<button class="btn secondary" id="detFav">'+(isFav(r.name)?"★ お気に入り済み":"☆ お気に入りに追加")+'</button>'+
+     '<button class="btn secondary" data-action="closeSheet">閉じる</button></div>';
+  const ov=openSheet(h);
+  const fb=ov.querySelector("#detFav");
+  if(fb) fb.onclick=()=>{
+    toggleFav({ name:r.name, uses:r.uses, buy:r.buy, how:r.how }, d);
+    fb.textContent = isFav(r.name) ? "★ お気に入り済み" : "☆ お気に入りに追加";
+  };
 }
 
 /* ---------- pantry sync (メール通知用の在庫スナップショット送信) ---------- */
@@ -1673,7 +1866,7 @@ async function resetData(){
   }
   stateGen++;
   resetDetailState();   // 手順キャッシュも破棄（削除後に古い手順が残らないように）
-  state={ items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0, pro:false, theme:"default", cookPick:[] };
+  state={ items:[], apiUrl:"", notifyDays:3, lastRecipes:null, cookFilter:defaultCookFilter(), affId:"", affClicks:0, pro:false, theme:"default", cookPick:[], favorites:[], wishlist:[] };
   budget={ dailyAllowance:budget.dailyAllowance, startDate:DEFAULT_START, syncUrl:"", entries:[] };
   save(); saveBudget(); render(); toast("削除しました");
 }
@@ -1965,6 +2158,12 @@ document.addEventListener("click", e=>{
   else if(a==="suggest") suggest();
   else if(a==="pickTog") togglePick(b.dataset.id);
   else if(a==="pickClear"){ state.cookPick=[]; save(); if(currentTab==="cook") renderCook(); }
+  else if(a==="cookScreen"){ cookScreen=(b.dataset.screen==="faves")?"faves":"suggest"; renderCook(); }
+  else if(a==="favTog") favTogCard(b.dataset.list, Number(b.dataset.idx));
+  else if(a==="favOpen") showFavDetail(b.dataset.id);
+  else if(a==="favDel"){ const i=(state.favorites||[]).findIndex(f=>f.id===b.dataset.id); if(i>=0){ state.favorites.splice(i,1); save(); renderCook(); toast("お気に入りから外しました"); } }
+  else if(a==="wishAdd") wishAddSheet();
+  else if(a==="wishOpen") showWishDetail(b.dataset.id);
   else if(a==="aff"){ state.affClicks=(state.affClicks||0)+1; save(); }  // preventDefaultしない＝リンクは新タブで開く
   else if(a==="saveApi") saveApi();
   else if(a==="testApi") testApi();

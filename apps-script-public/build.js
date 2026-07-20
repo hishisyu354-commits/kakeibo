@@ -93,6 +93,11 @@ function doPost(e){
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
 }
 
+/** ★初回セットアップ：エディタでこの関数を1回だけ「実行」し、権限（外部リクエスト＝Gemini呼び出し）を承認してください。 */
+function authorize(){
+  return { geminiConfigured: geminiConfigured_(), dailyCap: CONFIG.DAILY_CAP };
+}
+
 // ===== 以下は ../apps-script/Code.gs から自動コピーしたAI関数（手編集しない） =====
 `;
 

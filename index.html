@@ -348,6 +348,9 @@ const BOOTH_URL = "https://booth.pm/";   // ←出品後、自分のPro版商品
 const FEEDBACK_URL = "";   // ←Googleフォーム等の感想URL。設定すると「感想・要望を送る」ボタンが出る
 const GC_CODE = "kakeibo-hs";   // GoatCounter（https://kakeibo-hs.goatcounter.com）。空なら計測しない・Cookieなし
 const WELCOME_KEY = "kakeibo.welcomed.v2";
+// 設定ゼロで使える共有AI（別Apps Scriptの公開プロキシ・Gmail等には触れない・1日上限あり）。
+// 自分のキーを「設定→AI連携」に入れた人はそちら優先（無制限）。
+const PUBLIC_API_URL = "https://script.google.com/macros/s/AKfycbzbsuP7Vwqqsha0xDgN2BHPlg1gYeeiLEsdxS8U-mY5hG92ld5V9AAfNfBoijW-jQX5OQ/exec?token=kakeibo-pub-77fa3bf3557b4930a444";
 const validCook = (v, list) => (typeof v==="string" && list.indexOf(v)>=0) ? v : "";
 const defaultCookFilter = () => ({ meal:"", genre:"" });
 
@@ -923,7 +926,7 @@ function showFavDetail(id){
   h+='<div id="subsBox" class="note" style="margin-top:8px"></div>';
   h+='<div class="btn-row" style="margin-top:12px">'+
      (miss.length?'<button class="btn secondary" id="favShop">🛒 不足を買い物リストへ</button>':'')+
-     (miss.length && state.apiUrl?'<button class="btn secondary" id="favSubs">🤖 代用案を見る</button>':'')+
+     (miss.length && aiAvailable()?'<button class="btn secondary" id="favSubs">🤖 代用案を見る</button>':'')+
      '</div>';
   h+='<div class="btn-row" style="margin-top:8px"><button class="btn danger" id="favDelBtn">お気に入りから外す</button>'+
      '<button class="btn secondary" data-action="closeSheet">閉じる</button></div>';
@@ -937,7 +940,7 @@ function showFavDetail(id){
 }
 async function fetchSubs(f, ov){
   const box=ov.querySelector("#subsBox"), btn=ov.querySelector("#favSubs");
-  if(!state.apiUrl){ if(box) box.textContent="AI連携を設定すると代用案を出せます"; return; }
+  if(!aiAvailable()){ if(box) box.textContent="AIに接続できません"; return; }
   if(btn){ btn.disabled=true; btn.innerHTML='<span class="spinner"></span>考え中…'; }
   try{
     const res=await api({ action:"recipeHelp", name:f.name, ings:recipeIngredients(f), stock:stockItems().map(i=>i.name) }, 60000);
@@ -1009,7 +1012,7 @@ function renderCook(){
     pickUi+
     '<button class="btn" data-action="suggest" id="suggestBtn" style="margin-top:12px"'+(st.length?"":" disabled")+'>'+suggestLabel+'</button>'+
     (st.length ? "" : '<p class="note" style="margin-top:8px">在庫に食材を追加すると提案できます。</p>')+
-    (state.apiUrl ? "" : '<p class="note" style="margin-top:8px">先に「設定 → AI連携」でURLを登録してください。</p>')+
+    (aiAvailable() ? "" : '<p class="note" style="margin-top:8px">AIに接続できません（設定→AI連携をご確認ください）。</p>')+
   '</div>';
   const r=state.lastRecipes;
   if(r){
@@ -1043,7 +1046,7 @@ function renderSettings(){
   el("tab-settings").innerHTML=
     '<div class="section-title">連携URL（AI・レシート・カード同期）</div>'+
     '<div class="card">'+
-      '<p class="note">Google Apps Script の URL を1つ貼ると、写真読み取り・料理提案・期限通知・カード利用通知メールの同期で共用します。AIは Google の <b>Gemini API 無料枠</b> を使います。</p>'+
+      '<p class="note"><b>AI（写真・レシート・献立提案）は設定不要ですぐ使えます</b>（共有のAI・1日の利用上限あり）。ここに自分の Google Apps Script の URL を入れると、AIが<b>無制限</b>になり、さらに<b>カード利用通知メールの同期・期限通知メール</b>も使えます（上級者向け・設定は SETUP.md 参照）。</p>'+
       '<label class="field">Apps Script URL<input id="setApiUrl" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/.../exec?token=..." value="'+esc(linkUrl)+'"></label>'+
       '<div class="btn-row"><button class="btn" data-action="saveApi">保存</button>'+
       '<button class="btn secondary" data-action="testApi" id="testApiBtn">接続テスト</button></div>'+
@@ -1330,7 +1333,7 @@ function voiceAddSheet(){
     const btn=el("vAdd");
     let names=parseSpokenItems(ta.value);
     // AI連携があれば、より賢く食材名を抽出（自然な話し方にも対応）。失敗時はローカル解析結果を使う
-    if(state.apiUrl && ta.value.trim()){
+    if(aiAvailable() && ta.value.trim()){
       btn.disabled=true; btn.innerHTML='<span class="spinner"></span>整理中…';
       try{
         const res=await api({ action:"itemsFromText", text:ta.value.slice(0,2000) }, 30000);
@@ -1441,7 +1444,7 @@ function confirmAiSheet(ctx, ai){
 /* ---------- photo → AI ---------- */
 let photoCtx=null;
 function startPhoto(ctx){
-  if(!state.apiUrl){ toast("先に設定タブでAI連携URLを登録してください"); show("settings"); return; }
+  if(!aiAvailable()){ toast("いまAIに接続できません。少し時間をおいてお試しください"); return; }
   photoCtx=ctx;
   el("photoFile").click();
 }
@@ -1594,9 +1597,12 @@ function confirmReceiptSheet(rc){
 }
 
 /* ---------- server API (Apps Script, fetch POST) ---------- */
+// AI呼び出し先：自分の連携URLがあればそれ、無ければ共有の公開プロキシ
+function aiUrl(){ return (state.apiUrl||"").trim() || PUBLIC_API_URL || ""; }
+function aiAvailable(){ return !!aiUrl(); }
 async function api(body, timeoutMs){
-  const url=(state.apiUrl||"").trim();
-  if(!url) throw new Error("連携URLが未設定です（設定タブで登録）");
+  const url=aiUrl();
+  if(!url) throw new Error("AIに接続できません（設定タブのAI連携をご確認ください）");
   const ctrl=new AbortController();
   const t=setTimeout(()=>ctrl.abort(), timeoutMs||60000);
   try{
@@ -2242,7 +2248,7 @@ function showWelcome(force){
     '<h2>ようこそ 🍚</h2>'+
     '<p class="note" style="line-height:1.9">「食費と食材」は、<b>食費の家計簿</b>・<b>賞味期限の管理</b>・<b>在庫からのAI献立</b>・<b>お気に入り／作りたいレシピ</b>を1つにまとめた無料アプリです。'+
     '<br>・<b>登録不要ですぐ使えます</b>（家計簿・食材の中身はこの端末の中だけに保存。外部に送信しません）'+
-    '<br>・AI機能（写真・レシート・献立提案）だけは任意で「設定 → AI連携」から'+
+    '<br>・<b>AI機能（写真・レシート・献立提案）も設定不要で使えます</b>（共有のAIを利用。1日の利用上限あり／自分のキーを設定すれば無制限）'+
     '<br>・iPhoneは <b>共有 → ホーム画面に追加</b> でアプリのように使えます</p>'+
     '<button class="btn" id="wlStart">使ってみる</button>'+ fb +
     '<button class="btn secondary" data-action="closeSheet">閉じる</button>'
